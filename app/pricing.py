@@ -1,35 +1,49 @@
-```python
-"""
-Pricing API
-===========
+import time
 
-API dành cho hệ thống giá.
+from flask import (
+    Blueprint,
+    jsonify,
+    request,
+    session,
+)
 
-Frontend chỉ nhận FINAL PRICE.
+from app.middleware import pricing_security_required
 
-Không expose:
-- market rate
-- spread
-- margin
-- pricing rule
-- cost
-- internal calculation
-"""
+from app.customer.service import (
+    CustomerService,
+    CustomerNotFound,
+    CustomerInactive,
+)
 
-from decimal import Decimal
+from app.customer.repository import (
+    CustomerAPIError,
+    CustomerAPIUnavailable,
+    CustomerAPITimeout,
+)
 
-from flask import Blueprint, request, jsonify, session
+from services.market_rate import (
+    MarketRateService,
+    MarketRateError,
+)
+
+from services.pricing_engine import (
+    PricingEngine,
+    PricingError,
+)
 
 from utils.rate_limit import custom_rate_limit
-from app.middleware import pricing_security_required
-from services.pricing_engine import pricing_engine, PricingError
 
 
 pricing_bp = Blueprint(
     "pricing",
     __name__,
-    url_prefix="/api/pricing"
+    url_prefix="/api/pricing",
 )
+
+
+customer_service = CustomerService()
+market_rate_service = MarketRateService()
+pricing_engine = PricingEngine()
 
 
 @pricing_bp.route("/quote", methods=["POST"])
@@ -37,91 +51,233 @@ pricing_bp = Blueprint(
 @pricing_security_required
 def quote():
 
+    # ==========================================================
+    # 1. USER AUTHENTICATION
+    # ==========================================================
+
+    user_id = session.get("user_id")
+
+    if not user_id:
+        return jsonify({
+            "error": "AUTHENTICATION_REQUIRED",
+            "message": "Yêu cầu đăng nhập.",
+        }), 401
+
+    # ==========================================================
+    # 2. REQUEST DATA
+    # ==========================================================
+
     data = request.get_json(silent=True) or {}
 
     currency = str(
         data.get("currency", "")
-    ).strip().upper()
+    ).upper().strip()
 
     side = str(
         data.get("side", "")
-    ).strip().upper()
+    ).upper().strip()
 
     amount = data.get("amount")
 
-    # --------------------------------------------------------------
-    # Không nhận customer_id từ frontend.
-    #
-    # customer_id phải lấy từ authenticated session.
-    # --------------------------------------------------------------
-
-    customer_id = session.get("customer_id")
-
-    if not customer_id:
+    if not currency:
         return jsonify({
-            "error": "CUSTOMER_CONTEXT_REQUIRED",
-            "message": "Không xác định được khách hàng"
-        }), 403
+            "error": "INVALID_CURRENCY",
+            "message": "Thiếu currency.",
+        }), 400
 
-    if not currency or not side or amount is None:
+    if not side:
         return jsonify({
-            "error": "INVALID_REQUEST",
-            "message": "Thiếu currency, side hoặc amount"
+            "error": "INVALID_SIDE",
+            "message": "Thiếu side.",
+        }), 400
+
+    if amount is None:
+        return jsonify({
+            "error": "INVALID_AMOUNT",
+            "message": "Thiếu amount.",
         }), 400
 
     try:
-        amount_decimal = Decimal(str(amount))
+        amount_value = float(amount)
+    except (TypeError, ValueError):
 
-    except Exception:
         return jsonify({
             "error": "INVALID_AMOUNT",
-            "message": "Amount không hợp lệ"
+            "message": "Amount không hợp lệ.",
         }), 400
 
-    # --------------------------------------------------------------
-    # Giới hạn amount ở API layer.
-    # Production nên lấy limit từ DB/customer policy.
-    # --------------------------------------------------------------
+    if amount_value <= 0:
 
-    max_amount = Decimal("10000000")
-
-    if amount_decimal <= 0:
         return jsonify({
             "error": "INVALID_AMOUNT",
-            "message": "Amount phải lớn hơn 0"
+            "message": "Amount phải lớn hơn 0.",
         }), 400
 
-    if amount_decimal > max_amount:
+    # ==========================================================
+    # 3. CUSTOMER CONTEXT
+    # ==========================================================
+    #
+    # KHÔNG lấy customer_id từ request body.
+    #
+    # Customer ID phải đến từ authentication / authorization
+    # server-side.
+    #
+
+    customer_id = session.get(
+        "customer_id"
+    )
+
+    if not customer_id:
+
+        return jsonify({
+            "error": "CUSTOMER_CONTEXT_REQUIRED",
+            "message": (
+                "Phiên hiện tại chưa được gắn khách hàng."
+            ),
+        }), 403
+
+    # ==========================================================
+    # 4. CUSTOMER API
+    # ==========================================================
+
+    try:
+
+        customer = customer_service.get_customer(
+            customer_id
+        )
+
+    except CustomerNotFound:
+
+        return jsonify({
+            "error": "CUSTOMER_NOT_FOUND",
+            "message": "Không tìm thấy khách hàng.",
+        }), 404
+
+    except CustomerInactive:
+
+        return jsonify({
+            "error": "CUSTOMER_INACTIVE",
+            "message": "Khách hàng không hoạt động.",
+        }), 403
+
+    except CustomerAPITimeout:
+
+        return jsonify({
+            "error": "CUSTOMER_SERVICE_TIMEOUT",
+            "message": "Customer API timeout.",
+        }), 504
+
+    except CustomerAPIUnavailable:
+
+        return jsonify({
+            "error": "CUSTOMER_SERVICE_UNAVAILABLE",
+            "message": "Customer API không khả dụng.",
+        }), 503
+
+    except CustomerAPIError:
+
+        return jsonify({
+            "error": "CUSTOMER_SERVICE_ERROR",
+            "message": "Customer API trả lỗi.",
+        }), 502
+
+    # ==========================================================
+    # 5. CHECK CUSTOMER CURRENCY PERMISSION
+    # ==========================================================
+
+    if not customer_service.check_currency_permission(
+        customer,
+        currency,
+    ):
+
+        return jsonify({
+            "error": "CURRENCY_NOT_PERMITTED",
+            "message": (
+                "Khách hàng không được phép giao dịch currency này."
+            ),
+        }), 403
+
+    # ==========================================================
+    # 6. CHECK CUSTOMER LIMIT
+    # ==========================================================
+
+    if not customer_service.check_amount_limit(
+        customer,
+        amount_value,
+    ):
+
         return jsonify({
             "error": "AMOUNT_LIMIT_EXCEEDED",
-            "message": "Vượt hạn mức báo giá"
+            "message": (
+                "Amount vượt hạn mức khách hàng."
+            ),
         }), 403
+
+    # ==========================================================
+    # 7. MARKET RATE
+    # ==========================================================
+
+    try:
+
+        market_rate = market_rate_service.get_rate(
+            currency=currency,
+            side=side,
+        )
+
+    except MarketRateError:
+
+        return jsonify({
+            "error": "MARKET_RATE_UNAVAILABLE",
+            "message": "Market Rate API không khả dụng.",
+        }), 503
+
+    # ==========================================================
+    # 8. PRICING ENGINE
+    # ==========================================================
 
     try:
 
         result = pricing_engine.calculate_price(
-            customer_id=customer_id,
+            customer=customer,
             currency=currency,
             side=side,
-            amount=amount_decimal,
+            amount=amount_value,
+            market_rate=market_rate,
         )
 
-    except PricingError as exc:
+    except PricingError:
 
         return jsonify({
-            "error": "PRICING_ERROR",
-            "message": str(exc)
-        }), 400
+            "error": "PRICING_UNAVAILABLE",
+            "message": "Không thể tính giá.",
+        }), 503
 
-    # --------------------------------------------------------------
-    # Chỉ trả FINAL PRICE.
+    # ==========================================================
+    # 9. CLIENT RESPONSE
+    # ==========================================================
     #
-    # TUYỆT ĐỐI không return pricing_engine internals.
-    # --------------------------------------------------------------
+    # CHỈ trả FINAL PRICE.
+    #
+    # Không trả:
+    # - market_rate
+    # - spread
+    # - margin
+    # - pricing tier
+    # - pricing rule
+    # - customer pricing
+    #
 
     return jsonify({
         "status": "success",
-        "quote": result
+        "quote": {
+            "currency": result["currency"],
+            "side": result["side"],
+            "price": result["price"],
+            "valid_for_seconds": (
+                result["valid_for_seconds"]
+            ),
+            "issued_at": result["issued_at"],
+        },
     }), 200
 
 
@@ -129,7 +285,7 @@ def quote():
 def pricing_health():
 
     return jsonify({
+        "status": "healthy",
         "service": "pricing-api",
-        "status": "healthy"
-    })
-```
+        "timestamp": int(time.time()),
+    }), 200
