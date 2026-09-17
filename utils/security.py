@@ -65,6 +65,38 @@ def generate_request_signature(timestamp: str, secret: str = None) -> str:
         hashlib.sha256
     ).hexdigest()
 
+def generate_pricing_signature(
+    timestamp: str,
+    method: str,
+    path: str,
+    body: str,
+    secret: str = None
+) -> str:
+
+    if secret is None:
+        secret = os.environ.get(
+            "API_SIGNING_SECRET",
+            "default-signing-secret-change-me"
+        )
+
+    body_hash = hashlib.sha256(
+        body.encode("utf-8")
+    ).hexdigest()
+
+    message = (
+        f"{timestamp}:"
+        f"{method.upper()}:"
+        f"{path}:"
+        f"{body_hash}:"
+        f"{get_client_ip()}:"
+        f"{session.get('fingerprint', '')}"
+    )
+
+    return hmac.new(
+        secret.encode("utf-8"),
+        message.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()
 
 def verify_request_signature(timestamp: str, signature: str, max_age_seconds: int = 60) -> bool:
     """
