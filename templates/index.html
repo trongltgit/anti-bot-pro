@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anti-Bot Pro – Hệ thống bảo vệ chuyên nghiệp</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Anti-Bot Pro</h1>
+            <p class="subtitle">Mô hình bảo vệ chống Bot / Crawling chuyên nghiệp</p>
+        </header>
+
+        <section class="info-card">
+            <h2>Thông tin phiên làm việc</h2>
+            <div class="info-grid">
+                <div>
+                    <span class="label">Fingerprint</span>
+                    <code id="fp">{{ fingerprint }}</code>
+                </div>
+                <div>
+                    <span class="label">IP Client</span>
+                    <code>{{ client_ip }}</code>
+                </div>
+            </div>
+        </section>
+
+        <section class="actions">
+            <h2>Kiểm thử các lớp bảo vệ</h2>
+            <div class="btn-group">
+                <button onclick="callApi('/api/public-data')" class="btn btn-primary">
+                    API Công khai (Rate limit vừa)
+                </button>
+                <button onclick="callProtectedApi()" class="btn btn-warning">
+                    API Dữ liệu User (Fingerprint + HMAC)
+                </button>
+                <button onclick="callApi('/api/sensitive')" class="btn btn-danger">
+                    API Nhạy cảm (Giới hạn rất thấp)
+                </button>
+                <a href="/dashboard" class="btn btn-success">Vào Dashboard</a>
+            </div>
+        </section>
+
+        <section class="result-card">
+            <h3>Kết quả phản hồi</h3>
+            <pre id="result">Nhấn nút để test...</pre>
+        </section>
+
+        <section class="docs">
+            <h3>Các lớp bảo vệ đang hoạt động</h3>
+            <ul>
+                <li>Rate Limiting theo IP (nhiều mức độ)</li>
+                <li>Browser Fingerprint + Session binding</li>
+                <li>Phát hiện User-Agent bot phổ biến</li>
+                <li>Chữ ký HMAC + chống Replay Attack</li>
+                <li>Phân tách endpoint theo mức độ nhạy cảm</li>
+                <li>Sẵn sàng tích hợp Cloudflare / Redis / Turnstile</li>
+            </ul>
+        </section>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
