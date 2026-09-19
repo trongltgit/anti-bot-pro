@@ -35,36 +35,134 @@ customer_service = CustomerService()
 @main_bp.route("/")
 @custom_rate_limit("30 per minute")
 def index():
-    """Trang chủ – gắn fingerprint vào session"""
+    """Trang chọn cổng – gắn fingerprint"""
     fingerprint = get_client_fingerprint()
     session["fingerprint"] = fingerprint
     session["first_seen"] = int(time.time())
     session["page_views"] = session.get("page_views", 0) + 1
+    return render_template("index.html")
+
+
+@main_bp.route("/login/hq")
+@custom_rate_limit("30 per minute")
+def login_hq():
+    if not session.get("fingerprint"):
+        session["fingerprint"] = get_client_fingerprint()
     return render_template(
-        "index.html",
-        fingerprint=fingerprint,
-        client_ip=get_client_ip(),
-        logged_in=bool(session.get("user_id")),
-        user_name=session.get("user_name"),
-        role=session.get("role"),
+        "login.html",
+        portal_title="Hội sở",
+        portal_desc="Quản lý chính sách giá cấp 1",
+        expected_role="HQ",
+        redirect_url="/portal/hq",
+        default_user="hq01",
     )
+
+
+@main_bp.route("/login/cn")
+@custom_rate_limit("30 per minute")
+def login_cn():
+    if not session.get("fingerprint"):
+        session["fingerprint"] = get_client_fingerprint()
+    return render_template(
+        "login.html",
+        portal_title="Chi nhánh",
+        portal_desc="Báo giá và giao dịch khách hàng",
+        expected_role="PNV",
+        redirect_url="/portal/cn",
+        default_user="staff01",
+    )
+
+
+@main_bp.route("/login/kh")
+@custom_rate_limit("30 per minute")
+def login_kh():
+    if not session.get("fingerprint"):
+        session["fingerprint"] = get_client_fingerprint()
+    return render_template(
+        "login.html",
+        portal_title="Khách hàng",
+        portal_desc="Xem giá và xác nhận giao dịch",
+        expected_role="CUSTOMER",
+        redirect_url="/portal/kh",
+        default_user="cust001",
+    )
+
+
+def _require_role(role: str):
+    if not verify_fingerprint():
+        return render_template("blocked.html", reason="Phiên không hợp lệ"), 403
+    if not session.get("user_id"):
+        return None, "login"
+    if (session.get("role") or "").upper() != role.upper():
+        return render_template("blocked.html", reason="Sai cổng đăng nhập"), 403
+    return None, "ok"
+
+
+@main_bp.route("/portal/hq")
+@custom_rate_limit("30 per minute")
+def portal_hq():
+    err, st = _require_role("HQ")
+    if st == "login":
+        return render_template(
+            "login.html",
+            portal_title="Hội sở",
+            portal_desc="Quản lý chính sách giá cấp 1",
+            expected_role="HQ",
+            redirect_url="/portal/hq",
+            default_user="hq01",
+        )
+    if err:
+        return err
+    return render_template("portal_hq.html", user_name=session.get("user_name"))
+
+
+@main_bp.route("/portal/cn")
+@custom_rate_limit("30 per minute")
+def portal_cn():
+    err, st = _require_role("PNV")
+    if st == "login":
+        return render_template(
+            "login.html",
+            portal_title="Chi nhánh",
+            portal_desc="Báo giá và giao dịch khách hàng",
+            expected_role="PNV",
+            redirect_url="/portal/cn",
+            default_user="staff01",
+        )
+    if err:
+        return err
+    return render_template("portal_cn.html", user_name=session.get("user_name"))
+
+
+@main_bp.route("/portal/kh")
+@custom_rate_limit("30 per minute")
+def portal_kh():
+    err, st = _require_role("CUSTOMER")
+    if st == "login":
+        return render_template(
+            "login.html",
+            portal_title="Khách hàng",
+            portal_desc="Xem giá và xác nhận giao dịch",
+            expected_role="CUSTOMER",
+            redirect_url="/portal/kh",
+            default_user="cust001",
+        )
+    if err:
+        return err
+    return render_template("portal_kh.html", user_name=session.get("user_name"))
 
 
 @main_bp.route("/dashboard")
 @custom_rate_limit("20 per minute")
 def dashboard():
-    """Dashboard giao dịch – yêu cầu fingerprint + login"""
-    if not verify_fingerprint():
-        return render_template("blocked.html", reason="Fingerprint không hợp lệ"), 403
-    if not session.get("user_id"):
-        return render_template("index.html", need_login=True), 401
-    return render_template(
-        "dashboard.html",
-        user_name=session.get("user_name"),
-        role=session.get("role"),
-        customer_id=session.get("customer_id"),
-        cif=session.get("cif"),
-    )
+    role = (session.get("role") or "").upper()
+    if role == "HQ":
+        return portal_hq()
+    if role == "PNV":
+        return portal_cn()
+    if role == "CUSTOMER":
+        return portal_kh()
+    return index()
 
 
 @main_bp.route("/blocked")
