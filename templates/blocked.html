@@ -1,26 +1,18 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Truy cập bị chặn – Anti-Bot Pro</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Access Denied</title>
+  <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1 style="color: #e74c3c;">Truy cập bị từ chối</h1>
-        </header>
-
-        <section class="info-card danger">
-            <h2>Lý do</h2>
-            <p>{{ reason or "Hành vi bị nghi ngờ là bot / crawler" }}</p>
-            <p>Hệ thống đã phát hiện dấu hiệu bất thường và chặn yêu cầu của bạn.</p>
-        </section>
-
-        <div class="btn-group">
-            <a href="/" class="btn btn-primary">Thử lại từ trang chủ</a>
-        </div>
+  <div class="container">
+    <div class="card error">
+      <h1>Truy cập bị chặn</h1>
+      <p>{{ reason or 'Yêu cầu không hợp lệ hoặc nghi ngờ bot.' }}</p>
+      <a href="/">Về trang chủ</a>
     </div>
+  </div>
 </body>
 </html>
