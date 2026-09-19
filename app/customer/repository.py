@@ -1,6 +1,22 @@
+"""
+Customer Repository / Adapter
+=============================
+
+- Demo mode: dùng Mock Customer DB (khi CUSTOMER_API_URL trống)
+- Production: gọi Customer API thật qua HTTP
+
+Anti-Bot Pro KHÔNG sở hữu Customer DB thật.
+Chỉ adapter để lấy profile phục vụ Pricing Engine.
+"""
+
 import os
-import time
 import requests
+
+from app.customer.mock_db import (
+    get_demo_customer,
+    get_demo_customer_by_cif,
+    list_demo_customers,
+)
 
 
 class CustomerAPIError(Exception):
@@ -17,52 +33,34 @@ class CustomerAPIUnavailable(CustomerAPIError):
 
 class CustomerAPIRepository:
     """
-    Adapter for the external Customer API.
-
-    Anti-Bot Pro does not own the customer database.
+    Adapter for external Customer API hoặc Mock DB.
     """
 
     def __init__(self):
         self.base_url = os.environ.get("CUSTOMER_API_URL", "").strip()
         self.api_key = os.environ.get("CUSTOMER_API_KEY", "").strip()
+        self.timeout = float(os.environ.get("CUSTOMER_API_TIMEOUT", "5"))
 
-        self.timeout = float(
-            os.environ.get("CUSTOMER_API_TIMEOUT", "5")
-        )
+        verify_ssl = os.environ.get("CUSTOMER_API_VERIFY_SSL", "1").strip().lower()
+        self.verify_ssl = verify_ssl not in {"0", "false", "no", "off"}
 
-        verify_ssl = os.environ.get(
-            "CUSTOMER_API_VERIFY_SSL",
-            "1"
-        ).strip().lower()
+        # Demo mode nếu chưa cấu hình URL
+        self.demo_mode = not bool(self.base_url)
 
-        self.verify_ssl = verify_ssl not in {
-            "0",
-            "false",
-            "no",
-            "off"
-        }
-
-        if not self.base_url:
-            raise CustomerAPIUnavailable(
-                "CUSTOMER_API_URL chưa được cấu hình."
-            )
-
-        self.base_url = self.base_url.rstrip("/")
+        if not self.demo_mode:
+            self.base_url = self.base_url.rstrip("/")
 
     def _headers(self):
         headers = {
             "Accept": "application/json",
-            "User-Agent": "Anti-Bot-Pro/1.0"
+            "User-Agent": "Anti-Bot-Pro/1.0",
         }
-
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-
         return headers
 
     def _request(self, method, path, **kwargs):
         url = f"{self.base_url}/{path.lstrip('/')}"
-
         headers = kwargs.pop("headers", {})
         final_headers = self._headers()
         final_headers.update(headers)
@@ -74,14 +72,10 @@ class CustomerAPIRepository:
                 headers=final_headers,
                 timeout=self.timeout,
                 verify=self.verify_ssl,
-                **kwargs
+                **kwargs,
             )
-
         except requests.Timeout as exc:
-            raise CustomerAPITimeout(
-                "Customer API timeout."
-            ) from exc
-
+            raise CustomerAPITimeout("Customer API timeout.") from exc
         except requests.RequestException as exc:
             raise CustomerAPIUnavailable(
                 f"Không thể kết nối Customer API: {exc}"
@@ -89,17 +83,12 @@ class CustomerAPIRepository:
 
         if response.status_code == 404:
             return None
-
         if response.status_code in (401, 403):
-            raise CustomerAPIError(
-                "Customer API từ chối quyền truy cập."
-            )
-
+            raise CustomerAPIError("Customer API từ chối quyền truy cập.")
         if response.status_code >= 500:
             raise CustomerAPIUnavailable(
                 f"Customer API trả HTTP {response.status_code}."
             )
-
         if response.status_code >= 400:
             raise CustomerAPIError(
                 f"Customer API trả HTTP {response.status_code}."
@@ -113,79 +102,49 @@ class CustomerAPIRepository:
             ) from exc
 
     def get_customer(self, customer_id):
-        """
-        Get customer by internal customer ID.
-
-        Expected external endpoint:
-            GET /customers/{customer_id}
-        """
+        if self.demo_mode:
+            return get_demo_customer(customer_id)
 
         if not customer_id:
             return None
-
-        data = self._request(
-            "GET",
-            f"/customers/{customer_id}"
-        )
-
+        data = self._request("GET", f"/customers/{customer_id}")
         return self._normalize_customer(data)
 
     def get_customer_by_cif(self, cif):
-        """
-        Optional CIF lookup.
-
-        Expected external endpoint:
-            GET /customers/by-cif/{cif}
-        """
+        if self.demo_mode:
+            return get_demo_customer_by_cif(cif)
 
         if not cif:
             return None
-
-        data = self._request(
-            "GET",
-            f"/customers/by-cif/{cif}"
-        )
-
+        data = self._request("GET", f"/customers/by-cif/{cif}")
         return self._normalize_customer(data)
 
+    def list_customers(self):
+        if self.demo_mode:
+            return list_demo_customers()
+        data = self._request("GET", "/customers")
+        if isinstance(data, list):
+            return [self._normalize_customer(c) for c in data if c]
+        if isinstance(data, dict) and isinstance(data.get("data"), list):
+            return [self._normalize_customer(c) for c in data["data"] if c]
+        return []
+
     def _normalize_customer(self, data):
-        """
-        Convert external API response into our internal structure.
-
-        Adjust this mapping later when the real Customer API is known.
-        """
-
         if not data:
             return None
-
-        # Some APIs wrap the customer in {"data": {...}}
         if isinstance(data, dict) and isinstance(data.get("data"), dict):
             data = data["data"]
 
         return {
-            "customer_id": data.get("customer_id")
-                or data.get("id"),
-
+            "customer_id": data.get("customer_id") or data.get("id"),
             "cif": data.get("cif"),
-
-            "customer_name": data.get("customer_name")
-                or data.get("name"),
-
+            "customer_name": data.get("customer_name") or data.get("name"),
             "segment": data.get("segment"),
-
-            "status": str(
-                data.get("status", "")
-            ).upper(),
-
-            "pricing_tier": data.get("pricing_tier")
-                or data.get("pricingTier"),
-
+            "status": str(data.get("status", "")).upper(),
+            "pricing_tier": data.get("pricing_tier") or data.get("pricingTier"),
             "daily_limit": data.get("daily_limit"),
-
             "monthly_limit": data.get("monthly_limit"),
-
-            "currency_permissions":
-                data.get("currency_permissions", []),
-
-            "raw": data
+            "currency_permissions": data.get("currency_permissions", []),
+            "pricing": data.get("pricing") or {},
+            "raw": data,
         }
