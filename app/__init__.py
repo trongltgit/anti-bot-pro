@@ -1,4 +1,5 @@
 from flask import Flask
+from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
@@ -34,6 +35,9 @@ def create_app():
     )
 
     app.config["JSON_SORT_KEYS"] = False
+
+    # Render / reverse proxy
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     redis_url = os.environ.get("REDIS_URL", "").strip()
     if redis_url.startswith(("redis://", "rediss://")):
