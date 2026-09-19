@@ -17,48 +17,48 @@
       <h2>1. Chi nhánh &amp; CIF</h2>
       <label class="muted">Chi nhánh</label>
       <select id="branch-select" class="full-select"></select>
-      <label class="muted" style="margin-top:0.5rem;display:block">CIF khách hàng</label>
+      <label class="muted" style="margin-top:0.5rem;display:block">CIF (online = có login; offline = chỉ giao dịch qua CN)</label>
       <select id="cif-select" class="full-select"></select>
       <p id="cif-msg" class="muted"></p>
     </section>
 
     <section class="card">
-      <h2>2. Margin đã lưu (KH online)</h2>
-      <p class="hint">Chiều SELL/BUY là chiều <strong>ngân hàng</strong>. HQ không xem được margin này.</p>
-      <label class="muted">CIF</label>
+      <h2>2. Margin KH online</h2>
+      <p class="hint">Chỉ CIF <strong>online</strong>. Margin ≤ trần HQ (không vượt). Chiều SELL/BUY = chiều ngân hàng.</p>
+      <label class="muted">CIF online</label>
       <select id="preset-cif" class="full-select"></select>
       <div class="form-row" style="margin-top:0.5rem">
         <select id="p-cur"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
         <select id="p-side"><option>SELL</option><option>BUY</option></select>
-        <input type="number" id="p-margin" value="5" min="0" step="0.1" placeholder="Margin">
+        <input type="number" id="p-margin" value="5" min="0" step="0.1" placeholder="Margin ≤ trần HQ">
         <button onclick="savePreset()">Lưu / Cập nhật</button>
       </div>
       <p id="preset-msg" class="muted"></p>
-      <button onclick="loadPresets()" class="secondary">Xem margin đã lưu</button>
+      <button onclick="loadPresets()" class="secondary">Xem / sửa margin đã lưu</button>
       <div id="preset-list" class="result-box"></div>
     </section>
 
     <section class="card">
-      <h2>3. Báo giá offline</h2>
-      <p class="hint">Chọn CIF ở mục 1. Chỉ hiện <strong>giá KH</strong> (base HQ ẩn). Giá demo đổi nhẹ theo thời gian; hết hạn theo cấu hình HQ.</p>
+      <h2>3. Báo giá offline (mọi CIF)</h2>
+      <p class="hint">Chọn CIF ở mục 1 (online hoặc offline). Online vẫn quote offline được; offline chỉ qua CN.</p>
       <div class="form-row">
         <select id="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
         <select id="side"><option>SELL</option><option>BUY</option></select>
         <input type="number" id="amount" value="100000" min="1">
-        <input type="number" id="margin" value="5" min="0" step="0.1" placeholder="Margin CN">
-        <button onclick="startQuote()">Theo dõi giá realtime</button>
+        <input type="number" id="margin" value="5" min="0" step="0.1" placeholder="Margin ≤ trần HQ">
+        <button onclick="startQuote()">Theo dõi giá</button>
         <button class="secondary" onclick="stopQuote()">Dừng</button>
       </div>
       <div id="quote-box" class="result-box">
         <div class="price-line highlight"><span>Giá khách hàng</span><strong id="final-px">—</strong></div>
         <p class="muted small" id="quote-meta"></p>
       </div>
-      <button onclick="executeTrade()" id="btn-exec" disabled style="margin-top:0.75rem">Đồng ý &amp; thực hiện giao dịch</button>
+      <button onclick="executeTrade()" id="btn-exec" disabled style="margin-top:0.75rem">Đồng ý &amp; giao dịch</button>
       <div id="trade-box" class="result-box"></div>
     </section>
 
     <section class="card">
-      <h2>Lịch sử giao dịch</h2>
+      <h2>Lịch sử</h2>
       <button onclick="loadHistory()">Tải lịch sử</button>
       <div id="history-box" class="result-box"></div>
     </section>
