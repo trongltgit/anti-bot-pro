@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Đăng nhập – {{ portal_title }}</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="container narrow">
+    <header class="center">
+      <h1>{{ portal_title }}</h1>
+      <p class="subtitle">{{ portal_desc }}</p>
+    </header>
+
+    <section class="card">
+      <div class="form-col">
+        <label>Tên đăng nhập</label>
+        <input type="text" id="username" value="{{ default_user }}" autocomplete="username">
+        <label>Mật khẩu</label>
+        <input type="password" id="password" value="demo123" autocomplete="current-password">
+        <button class="full" onclick="doLogin()">Đăng nhập</button>
+        <p id="login-error" class="error-text"></p>
+      </div>
+    </section>
+
+    <p class="center"><a href="/">← Chọn cổng khác</a></p>
+  </div>
+  <script>
+    const EXPECTED_ROLE = "{{ expected_role }}";
+    const REDIRECT = "{{ redirect_url }}";
+
+    async function doLogin() {
+      const err = document.getElementById("login-error");
+      err.textContent = "";
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            username: document.getElementById("username").value.trim(),
+            password: document.getElementById("password").value,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          err.textContent = data.message || "Đăng nhập thất bại";
+          return;
+        }
+        const role = (data.user && data.user.role) || "";
+        if (EXPECTED_ROLE && role !== EXPECTED_ROLE) {
+          err.textContent = "Tài khoản không thuộc cổng này. Vui lòng chọn đúng cổng.";
+          await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+          return;
+        }
+        window.location.href = REDIRECT;
+      } catch (e) {
+        err.textContent = "Lỗi kết nối";
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chi nhánh – Giao dịch</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <header class="bar">
+      <div>
+        <h1>Chi nhánh</h1>
+        <p class="muted">Xin chào, {{ user_name }}</p>
+      </div>
+      <button class="secondary" onclick="logout()">Đăng xuất</button>
+    </header>
+
+    <section class="card">
+      <h2>Chọn khách hàng</h2>
+      <button onclick="loadCifs()">Tải danh sách</button>
+      <select id="cif-select" class="full-select"></select>
+      <p id="cif-msg" class="muted"></p>
+    </section>
+
+    <section class="card">
+      <h2>Báo giá</h2>
+      <p class="hint">Bạn thấy giá thị trường và margin chi nhánh. Không thấy chính sách Hội sở.</p>
+      <div class="form-row">
+        <select id="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
+        <select id="side"><option>SELL</option><option>BUY</option></select>
+        <input type="number" id="amount" value="100000" min="1" placeholder="Số tiền">
+        <input type="number" id="margin" value="5" min="0" step="0.1" placeholder="Margin CN">
+        <button onclick="getQuote()">Lấy giá</button>
+      </div>
+      <div id="quote-box" class="result-box">
+        <p class="muted">Chưa có báo giá</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Xác nhận giao dịch</h2>
+      <div class="form-row">
+        <button onclick="executeTrade()" id="btn-exec" disabled>Thực hiện giao dịch</button>
+      </div>
+      <div id="trade-box" class="result-box"></div>
+    </section>
+
+    <section class="card">
+      <h2>Lịch sử gần đây</h2>
+      <button onclick="loadHistory()">Tải lịch sử</button>
+      <div id="history-box" class="result-box"></div>
+    </section>
+  </div>
+  <script src="/static/js/portal_cn.js"></script>
+</body>
+</html>

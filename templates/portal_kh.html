@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Khách hàng – Báo giá</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="container narrow">
+    <header class="bar">
+      <div>
+        <h1>Xin chào, {{ user_name }}</h1>
+        <p class="muted">Báo giá giao dịch</p>
+      </div>
+      <button class="secondary" onclick="logout()">Đăng xuất</button>
+    </header>
+
+    <section class="card">
+      <h2>Yêu cầu báo giá</h2>
+      <div class="form-col">
+        <label>Loại tiền</label>
+        <select id="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
+        <label>Mua / Bán</label>
+        <select id="side"><option value="SELL">Bán</option><option value="BUY">Mua</option></select>
+        <label>Số tiền</label>
+        <input type="number" id="amount" value="100000" min="1">
+        <button class="full" onclick="getQuote()">Xem giá</button>
+      </div>
+    </section>
+
+    <section class="card price-card" id="price-card" style="display:none">
+      <p class="label">Giá của bạn</p>
+      <p class="big-price" id="final-price">—</p>
+      <p class="muted" id="price-meta"></p>
+      <button class="full" id="btn-accept" onclick="executeTrade()">Chấp nhận & giao dịch</button>
+      <p id="trade-msg" class="muted"></p>
+    </section>
+  </div>
+  <script src="/static/js/portal_kh.js"></script>
+</body>
+</html>
