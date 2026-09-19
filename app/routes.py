@@ -354,6 +354,18 @@ def cn_set_margin_preset():
     }
     if not customer_service.check_user_access(user, customer_id):
         return jsonify({"error": "ACCESS_DENIED", "message": "Không có quyền CIF này."}), 403
+    # Margin CN không được vượt trần HQ
+    try:
+        from app.customer.service import CustomerService
+        from services.hq_policy import hq_policy_service, HQPolicyError
+        cust = customer_service.get_customer(customer_id)
+        tier = str(cust.get("pricing_tier") or "BRONZE").upper()
+        hq_policy_service.validate_branch_margin(tier, currency, margin)
+    except Exception as e:
+        return jsonify({
+            "error": "MARGIN_EXCEEDED",
+            "message": str(e) if str(e) else "Margin vượt trần Hội sở quy định cho chi nhánh.",
+        }), 400
     from services.cn_margin_store import set_preset
     preset = set_preset(customer_id, currency, side, margin,
                         data.get("amount_min", 0), data.get("amount_max"))
