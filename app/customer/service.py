@@ -1,4 +1,10 @@
-import time
+"""
+Customer Service
+================
+
+Lớp nghiệp vụ: lấy customer, kiểm tra quyền, hạn mức.
+Không tin customer_id từ client – luôn lấy từ session + kiểm tra quyền.
+"""
 
 from app.customer.repository import (
     CustomerAPIRepository,
@@ -6,6 +12,7 @@ from app.customer.repository import (
     CustomerAPIUnavailable,
     CustomerAPITimeout,
 )
+from app.customer.mock_db import authenticate_demo_user
 
 
 class CustomerNotFound(Exception):
@@ -23,87 +30,79 @@ class CustomerAccessDenied(Exception):
 class CustomerService:
 
     def __init__(self, repository=None):
-        self.repository = (
-            repository
-            or CustomerAPIRepository()
-        )
+        self.repository = repository or CustomerAPIRepository()
 
     def get_customer(self, customer_id):
-        customer = self.repository.get_customer(
-            customer_id
-        )
-
+        customer = self.repository.get_customer(customer_id)
         if not customer:
-            raise CustomerNotFound(
-                "Không tìm thấy khách hàng."
-            )
-
-        status = customer.get("status", "").upper()
-
-        if status not in {
-            "ACTIVE",
-            "ACTIVATED",
-            "OPEN"
-        }:
-            raise CustomerInactive(
-                "Khách hàng không ở trạng thái hoạt động."
-            )
-
+            raise CustomerNotFound("Không tìm thấy khách hàng.")
+        status = str(customer.get("status", "")).upper()
+        if status not in {"ACTIVE", "ACTIVATED", "OPEN"}:
+            raise CustomerInactive("Khách hàng không ở trạng thái hoạt động.")
         return customer
 
     def get_customer_by_cif(self, cif):
         customer = self.repository.get_customer_by_cif(cif)
-
         if not customer:
-            raise CustomerNotFound(
-                "Không tìm thấy CIF."
-            )
-
-        status = customer.get("status", "").upper()
-
-        if status not in {
-            "ACTIVE",
-            "ACTIVATED",
-            "OPEN"
-        }:
-            raise CustomerInactive(
-                "Khách hàng không ở trạng thái hoạt động."
-            )
-
+            raise CustomerNotFound("Không tìm thấy CIF.")
+        status = str(customer.get("status", "")).upper()
+        if status not in {"ACTIVE", "ACTIVATED", "OPEN"}:
+            raise CustomerInactive("Khách hàng không ở trạng thái hoạt động.")
         return customer
 
-    def check_currency_permission(
-        self,
-        customer,
-        currency
-    ):
-        permissions = customer.get(
-            "currency_permissions"
-        ) or []
+    def check_user_access(self, user: dict, customer_id: str) -> bool:
+        """
+        Kiểm tra user hiện tại có quyền xem/giao dịch CIF này không.
+        """
+        if not user or not customer_id:
+            return False
+        permitted = user.get("permitted_customers") or []
+        if customer_id in permitted:
+            return True
+        # Customer portal: chỉ được xem chính mình
+        if user.get("role") == "CUSTOMER" and user.get("customer_id") == customer_id:
+            return True
+        return False
 
-        # Nếu Customer API không cung cấp danh sách,
-        # không tự động từ chối ở tầng adapter.
+    def check_currency_permission(self, customer, currency):
+        permissions = customer.get("currency_permissions") or []
         if not permissions:
             return True
-
-        normalized = {
-            str(item).upper()
-            for item in permissions
-        }
-
+        normalized = {str(item).upper() for item in permissions}
         return currency.upper() in normalized
 
-    def check_amount_limit(
-        self,
-        customer,
-        amount
-    ):
+    def check_amount_limit(self, customer, amount):
         daily_limit = customer.get("daily_limit")
-
         if daily_limit is None:
             return True
-
         try:
             return float(amount) <= float(daily_limit)
         except (TypeError, ValueError):
             return False
+
+    def authenticate(self, username: str, password: str):
+        """
+        Demo authentication.
+        Production: thay bằng LDAP / OAuth / JWT + MFA.
+        """
+        return authenticate_demo_user(username, password)
+
+    def list_permitted_customers(self, user: dict):
+        """Danh sách customer mà user được phép xem."""
+        if not user:
+            return []
+        permitted_ids = user.get("permitted_customers") or []
+        result = []
+        for cid in permitted_ids:
+            try:
+                c = self.get_customer(cid)
+                result.append({
+                    "customer_id": c["customer_id"],
+                    "cif": c.get("cif"),
+                    "customer_name": c.get("customer_name"),
+                    "segment": c.get("segment"),
+                    "pricing_tier": c.get("pricing_tier"),
+                })
+            except (CustomerNotFound, CustomerInactive):
+                continue
+        return result
