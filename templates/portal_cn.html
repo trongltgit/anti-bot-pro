@@ -14,16 +14,20 @@
     </header>
 
     <section class="card">
-      <h2>1. Chi nhánh & CIF</h2>
+      <h2>1. Chi nhánh &amp; CIF</h2>
+      <label class="muted">Chi nhánh</label>
       <select id="branch-select" class="full-select"></select>
-      <select id="cif-select" class="full-select" style="margin-top:0.5rem"></select>
+      <label class="muted" style="margin-top:0.5rem;display:block">CIF khách hàng</label>
+      <select id="cif-select" class="full-select"></select>
       <p id="cif-msg" class="muted"></p>
     </section>
 
     <section class="card">
       <h2>2. Cài margin cho KH online</h2>
-      <p class="hint">CIF online dùng margin này để tự lấy giá, không cần bạn quote từng lần.</p>
-      <div class="form-row">
+      <p class="hint">Chọn CIF ở mục 1 (hoặc bên dưới), rồi lưu margin. CIF online dùng margin này để tự lấy giá.</p>
+      <label class="muted">CIF áp dụng margin</label>
+      <select id="preset-cif" class="full-select"></select>
+      <div class="form-row" style="margin-top:0.5rem">
         <select id="p-cur"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
         <select id="p-side"><option>SELL</option><option>BUY</option></select>
         <input type="number" id="p-margin" value="5" min="0" step="0.1" placeholder="Margin">
@@ -34,7 +38,7 @@
 
     <section class="card">
       <h2>3. Báo giá (KH offline / kiểm tra)</h2>
-      <p class="hint">Chỉ hiển thị <strong>giá khách hàng</strong>. Base price Hội sở không hiển thị. Giá cập nhật theo chu kỳ HQ.</p>
+      <p class="hint">Chỉ hiển thị <strong>giá khách hàng</strong>. Base price Hội sở không hiển thị.</p>
       <div class="form-row">
         <select id="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
         <select id="side"><option>SELL</option><option>BUY</option></select>
@@ -47,7 +51,7 @@
         <div class="price-line highlight"><span>Giá khách hàng</span><strong id="final-px">—</strong></div>
         <p class="muted small" id="quote-meta"></p>
       </div>
-      <button onclick="executeTrade()" id="btn-exec" disabled style="margin-top:0.75rem">Đồng ý & thực hiện giao dịch</button>
+      <button onclick="executeTrade()" id="btn-exec" disabled style="margin-top:0.75rem">Đồng ý &amp; thực hiện giao dịch</button>
       <div id="trade-box" class="result-box"></div>
     </section>
 
