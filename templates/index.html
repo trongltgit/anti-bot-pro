@@ -3,18 +3,61 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hệ thống giao dịch</title>
+  <title>Đăng nhập</title>
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
   <div class="container narrow">
     <header class="center">
-      <h1>Hệ thống giao dịch</h1>
-      <p class="subtitle">Vui lòng dùng đường dẫn đăng nhập được cấp cho đơn vị của bạn.</p>
+      <h1>Đăng nhập</h1>
+      <p class="subtitle">Hệ thống giao dịch ngoại tệ</p>
     </header>
-    <section class="card center">
-      <p class="muted">Không công khai danh sách cổng trên trang này.</p>
+
+    <section class="card">
+      <div class="form-col">
+        <label>Tên đăng nhập</label>
+        <input type="text" id="username" autocomplete="username" placeholder="Tên đăng nhập">
+        <label>Mật khẩu</label>
+        <input type="password" id="password" autocomplete="current-password" placeholder="Mật khẩu">
+        <button class="full" onclick="doLogin()">Đăng nhập</button>
+        <p id="login-error" class="error-text"></p>
+      </div>
     </section>
   </div>
+  <script>
+    async function doLogin() {
+      const err = document.getElementById("login-error");
+      err.textContent = "";
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+      if (!username || !password) {
+        err.textContent = "Nhập tên đăng nhập và mật khẩu";
+        return;
+      }
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          err.textContent = data.message || "Sai tên đăng nhập hoặc mật khẩu";
+          return;
+        }
+        const role = (data.user && data.user.role) || "";
+        if (role === "HQ") location.href = "/portal/hq";
+        else if (role === "PNV") location.href = "/portal/cn";
+        else if (role === "CUSTOMER") location.href = "/portal/kh";
+        else err.textContent = "Tài khoản không hợp lệ";
+      } catch (e) {
+        err.textContent = "Lỗi kết nối";
+      }
+    }
+    document.getElementById("password").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") doLogin();
+    });
+  </script>
 </body>
 </html>
