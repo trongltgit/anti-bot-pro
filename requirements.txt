@@ -13,3 +13,4 @@ ordered-set==4.1.0
 wrapt==1.16.0
 rich==13.8.1
 pytz==2024.2
+requests==2.32.3
