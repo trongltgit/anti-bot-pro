@@ -23,28 +23,30 @@
     </section>
 
     <section class="card">
-      <h2>2. Cài margin cho KH online</h2>
-      <p class="hint">Chọn CIF ở mục 1 (hoặc bên dưới), rồi lưu margin. CIF online dùng margin này để tự lấy giá.</p>
-      <label class="muted">CIF áp dụng margin</label>
+      <h2>2. Margin đã lưu (KH online)</h2>
+      <p class="hint">Chiều SELL/BUY là chiều <strong>ngân hàng</strong>. HQ không xem được margin này.</p>
+      <label class="muted">CIF</label>
       <select id="preset-cif" class="full-select"></select>
       <div class="form-row" style="margin-top:0.5rem">
         <select id="p-cur"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
         <select id="p-side"><option>SELL</option><option>BUY</option></select>
         <input type="number" id="p-margin" value="5" min="0" step="0.1" placeholder="Margin">
-        <button onclick="savePreset()">Lưu margin CIF</button>
+        <button onclick="savePreset()">Lưu / Cập nhật</button>
       </div>
       <p id="preset-msg" class="muted"></p>
+      <button onclick="loadPresets()" class="secondary">Xem margin đã lưu</button>
+      <div id="preset-list" class="result-box"></div>
     </section>
 
     <section class="card">
-      <h2>3. Báo giá (KH offline / kiểm tra)</h2>
-      <p class="hint">Chỉ hiển thị <strong>giá khách hàng</strong>. Base price Hội sở không hiển thị.</p>
+      <h2>3. Báo giá offline</h2>
+      <p class="hint">Chọn CIF ở mục 1. Chỉ hiện <strong>giá KH</strong> (base HQ ẩn). Giá demo đổi nhẹ theo thời gian; hết hạn theo cấu hình HQ.</p>
       <div class="form-row">
         <select id="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
         <select id="side"><option>SELL</option><option>BUY</option></select>
         <input type="number" id="amount" value="100000" min="1">
         <input type="number" id="margin" value="5" min="0" step="0.1" placeholder="Margin CN">
-        <button onclick="startQuote()">Bắt đầu theo dõi giá</button>
+        <button onclick="startQuote()">Theo dõi giá realtime</button>
         <button class="secondary" onclick="stopQuote()">Dừng</button>
       </div>
       <div id="quote-box" class="result-box">
