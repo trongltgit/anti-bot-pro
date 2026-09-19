@@ -1,18 +1,14 @@
-"""
-Margin CN đã cài sẵn theo CIF / side / currency (cho KH online).
-CN cấu hình một lần; KH online lấy giá theo margin này mà không cần CN quote từng lần.
-"""
+"""Margin CN theo CIF – chỉ CN xem/sửa; HQ không xem margin."""
 from threading import Lock
 from copy import deepcopy
 
 _lock = Lock()
-# key: (customer_id, currency, side) -> margin str
 _PRESETS = {}
 
 
-def set_preset(customer_id: str, currency: str, side: str, margin, amount_min=0, amount_max=None):
-    currency = currency.upper()
-    side = side.upper()
+def set_preset(customer_id, currency, side, margin, amount_min=0, amount_max=None):
+    currency = str(currency).upper()
+    side = str(side).upper()
     key = (customer_id, currency, side)
     with _lock:
         _PRESETS[key] = {
@@ -23,12 +19,12 @@ def set_preset(customer_id: str, currency: str, side: str, margin, amount_min=0,
             "currency": currency,
             "side": side,
         }
-    return deepcopy(_PRESETS[key])
+        return deepcopy(_PRESETS[key])
 
 
-def get_preset(customer_id: str, currency: str, side: str, amount=None):
-    currency = currency.upper()
-    side = side.upper()
+def get_preset(customer_id, currency, side, amount=None):
+    currency = str(currency).upper()
+    side = str(side).upper()
     key = (customer_id, currency, side)
     with _lock:
         p = _PRESETS.get(key)
@@ -47,3 +43,11 @@ def list_presets_for_customers(customer_ids):
     ids = set(customer_ids or [])
     with _lock:
         return [deepcopy(v) for k, v in _PRESETS.items() if k[0] in ids]
+
+
+def delete_preset(customer_id, currency, side):
+    currency = str(currency).upper()
+    side = str(side).upper()
+    key = (customer_id, currency, side)
+    with _lock:
+        return _PRESETS.pop(key, None) is not None
