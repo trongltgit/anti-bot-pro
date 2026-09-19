@@ -1,31 +1,10 @@
 """
-Pricing Engine
-==============
+Pricing Engine – 2 cấp + phân quyền xem
+=======================================
 
-Pricing calculation is performed entirely server-side.
-
-IMPORTANT SECURITY RULES
-------------------------
-Frontend MUST NOT receive:
-- market_rate
-- spread
-- margin
-- cost
-- pricing_rule
-- pricing_tier
-- internal pricing formula
-
-Frontend receives FINAL PRICE only.
-
-Architecture:
-
-Customer API
-     ↓
-Customer Profile
-     ↓
-Pricing Engine
-     ↑
-Market Rate Service
+HQ:      thấy market + HQ_base + branch_margin + final
+CN:      thấy market + branch_margin + final  (KHÔNG thấy HQ_base)
+Customer: chỉ thấy final
 """
 
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -34,45 +13,23 @@ from typing import Any, Dict
 import os
 import time
 
+from services.hq_policy import hq_policy_service, HQPolicyError
+
 
 class PricingError(Exception):
-    """Business error raised by Pricing Engine."""
+    pass
 
 
 class PricingEngine:
-    """
-    Server-side pricing engine.
 
-    This class does NOT own Customer DB.
-    This class does NOT contain demo market rates.
-    This class does NOT contain demo customer spreads.
-
-    Customer information must come from Customer Service/API.
-    Market rate must come from Market Rate Service/API.
-    """
-
-    SUPPORTED_CURRENCIES = {
-        "USD",
-        "EUR",
-        "GBP",
-        "JPY",
-        "AUD",
-        "SGD",
-    }
-
-    SUPPORTED_SIDES = {
-        "BUY",
-        "SELL",
-    }
-
+    SUPPORTED_CURRENCIES = {"USD", "EUR", "GBP", "JPY", "AUD", "SGD"}
+    SUPPORTED_SIDES = {"BUY", "SELL"}
     DEFAULT_VALID_SECONDS = 30
 
     def __init__(self):
         self.environment = os.environ.get(
-            "PRICING_ENVIRONMENT",
-            "production",
+            "PRICING_ENVIRONMENT", "production"
         ).strip().lower()
-
         try:
             self.valid_for_seconds = int(
                 os.environ.get(
@@ -82,201 +39,36 @@ class PricingEngine:
             )
         except (TypeError, ValueError):
             self.valid_for_seconds = self.DEFAULT_VALID_SECONDS
-
         if self.valid_for_seconds <= 0:
             self.valid_for_seconds = self.DEFAULT_VALID_SECONDS
 
-    # ==============================================================
-    # VALIDATION
-    # ==============================================================
-
-    def validate_request(
-        self,
-        currency: str,
-        side: str,
-        amount: Any,
-    ) -> Decimal:
-
+    def validate_request(self, currency: str, side: str, amount: Any) -> Decimal:
         if not currency:
-            raise PricingError(
-                "Thiếu currency."
-            )
-
+            raise PricingError("Thiếu currency.")
         if not side:
-            raise PricingError(
-                "Thiếu side."
-            )
-
+            raise PricingError("Thiếu side.")
         currency = str(currency).upper().strip()
         side = str(side).upper().strip()
-
         if currency not in self.SUPPORTED_CURRENCIES:
-            raise PricingError(
-                "Currency không được hỗ trợ."
-            )
-
+            raise PricingError("Currency không được hỗ trợ.")
         if side not in self.SUPPORTED_SIDES:
-            raise PricingError(
-                "Side phải là BUY hoặc SELL."
-            )
-
+            raise PricingError("Side phải là BUY hoặc SELL.")
         try:
             amount = Decimal(str(amount))
-        except (
-            InvalidOperation,
-            TypeError,
-            ValueError,
-        ) as exc:
-            raise PricingError(
-                "Amount không hợp lệ."
-            ) from exc
-
-        if not amount.is_finite():
-            raise PricingError(
-                "Amount không hợp lệ."
-            )
-
-        if amount <= 0:
-            raise PricingError(
-                "Amount phải lớn hơn 0."
-            )
-
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise PricingError("Amount không hợp lệ.") from exc
+        if not amount.is_finite() or amount <= 0:
+            raise PricingError("Amount phải lớn hơn 0.")
         return amount
 
-    # ==============================================================
-    # CUSTOMER PRICING PROFILE
-    # ==============================================================
-
-    def get_customer_spread(
-        self,
-        customer: Dict[str, Any],
-        currency: str,
-        side: str,
-        amount: Decimal,
-    ) -> Decimal:
-        """
-        Obtain customer-specific pricing spread.
-
-        IMPORTANT:
-        This method intentionally does NOT contain demo pricing rules.
-
-        The Customer Service / Customer API should provide the pricing
-        information required by the business system.
-
-        Expected customer profile can contain, for example:
-
-            {
-                "customer_id": "...",
-                "pricing_tier": "GOLD",
-                "pricing": {
-                    "USD": {
-                        "BUY": "...",
-                        "SELL": "..."
-                    }
-                }
-            }
-
-        The exact mapping can later be adjusted to the real
-        Customer API response.
-        """
-
-        if not customer:
-            raise PricingError(
-                "Thiếu customer profile."
-            )
-
-        pricing = customer.get("pricing")
-
-        if not isinstance(pricing, dict):
-            raise PricingError(
-                "Customer profile chưa có pricing configuration."
-            )
-
-        currency_config = pricing.get(
-            currency
-        )
-
-        if not isinstance(currency_config, dict):
-            raise PricingError(
-                f"Chưa có pricing cho {currency}."
-            )
-
-        spread_value = currency_config.get(
-            side
-        )
-
-        if spread_value is None:
-            raise PricingError(
-                f"Chưa có pricing rule cho "
-                f"{currency}/{side}."
-            )
-
+    def validate_market_rate(self, market_rate: Any) -> Decimal:
         try:
-            spread = Decimal(
-                str(spread_value)
-            )
-        except (
-            InvalidOperation,
-            TypeError,
-            ValueError,
-        ) as exc:
-            raise PricingError(
-                "Customer pricing spread không hợp lệ."
-            ) from exc
-
-        if not spread.is_finite():
-            raise PricingError(
-                "Customer pricing spread không hợp lệ."
-            )
-
-        if spread < 0:
-            raise PricingError(
-                "Customer pricing spread không được âm."
-            )
-
-        return spread
-
-    # ==============================================================
-    # MARKET RATE
-    # ==============================================================
-
-    def validate_market_rate(
-        self,
-        market_rate: Any,
-    ) -> Decimal:
-        """
-        Validate a market rate supplied by the server-side
-        Market Rate Service.
-        """
-
-        try:
-            rate = Decimal(
-                str(market_rate)
-            )
-        except (
-            InvalidOperation,
-            TypeError,
-            ValueError,
-        ) as exc:
-            raise PricingError(
-                "Market rate không hợp lệ."
-            ) from exc
-
-        if not rate.is_finite():
-            raise PricingError(
-                "Market rate không hợp lệ."
-            )
-
-        if rate <= 0:
-            raise PricingError(
-                "Market rate phải lớn hơn 0."
-            )
-
+            rate = Decimal(str(market_rate))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise PricingError("Market rate không hợp lệ.") from exc
+        if not rate.is_finite() or rate <= 0:
+            raise PricingError("Market rate phải lớn hơn 0.")
         return rate
-
-    # ==============================================================
-    # CALCULATE
-    # ==============================================================
 
     def calculate_price(
         self,
@@ -285,124 +77,70 @@ class PricingEngine:
         side: str,
         amount: Any,
         market_rate: Any,
+        branch_margin: Any = 0,
+        viewer_role: str = "CUSTOMER",
     ) -> Dict[str, Any]:
         """
-        Calculate final customer price.
-
-        Parameters
-        ----------
-        customer:
-            Customer profile returned from Customer API.
-
-        currency:
-            Currency requested by the authenticated user.
-
-        side:
-            BUY or SELL.
-
-        amount:
-            Transaction amount.
-
-        market_rate:
-            Market rate obtained from server-side Market Rate API.
-
-        Returns
-        -------
-        dict
-            Only safe client-facing quote information.
+        viewer_role:
+          HQ       → full (market, hq_base, branch_margin, final)
+          PNV/STAFF→ market + branch_margin + final (không HQ_base)
+          CUSTOMER → chỉ final
         """
+        currency = str(currency).upper().strip()
+        side = str(side).upper().strip()
+        role = (viewer_role or "CUSTOMER").upper()
 
-        currency = str(
-            currency
+        amount = self.validate_request(currency, side, amount)
+        market_rate = self.validate_market_rate(market_rate)
+
+        if not customer.get("customer_id"):
+            raise PricingError("Customer profile thiếu customer_id.")
+
+        status = str(customer.get("status", "")).upper()
+        if status not in {"ACTIVE", "ACTIVATED", "OPEN"}:
+            raise PricingError("Customer không ở trạng thái hoạt động.")
+
+        pricing_tier = str(
+            customer.get("pricing_tier")
+            or customer.get("segment")
+            or "BRONZE"
         ).upper().strip()
 
-        side = str(
-            side
-        ).upper().strip()
-
-        amount = self.validate_request(
-            currency=currency,
-            side=side,
-            amount=amount,
-        )
-
-        market_rate = self.validate_market_rate(
-            market_rate
-        )
-
-        # ----------------------------------------------------------
-        # Customer identity validation
-        # ----------------------------------------------------------
-
-        customer_id = customer.get(
-            "customer_id"
-        )
-
-        if not customer_id:
-            raise PricingError(
-                "Customer profile thiếu customer_id."
+        try:
+            hq_spread = hq_policy_service.get_base_spread(
+                pricing_tier=pricing_tier,
+                currency=currency,
+                side=side,
             )
+        except HQPolicyError as exc:
+            raise PricingError(str(exc)) from exc
 
-        customer_status = str(
-            customer.get(
-                "status",
-                ""
+        try:
+            branch_m = hq_policy_service.validate_branch_margin(
+                pricing_tier=pricing_tier,
+                currency=currency,
+                branch_margin=branch_margin if branch_margin is not None else 0,
             )
-        ).upper()
+        except HQPolicyError as exc:
+            raise PricingError(str(exc)) from exc
 
-        if customer_status not in {
-            "ACTIVE",
-            "ACTIVATED",
-            "OPEN",
-        }:
-            raise PricingError(
-                "Customer không ở trạng thái hoạt động."
-            )
-
-        # ----------------------------------------------------------
-        # Customer-specific pricing
-        # ----------------------------------------------------------
-
-        spread = self.get_customer_spread(
-            customer=customer,
-            currency=currency,
-            side=side,
-            amount=amount,
-        )
-
-        # ----------------------------------------------------------
-        # Final price
-        # ----------------------------------------------------------
+        total_spread = hq_spread + branch_m
 
         if side == "BUY":
-            final_price = market_rate - spread
+            final_price = market_rate - total_spread
         else:
-            final_price = market_rate + spread
+            final_price = market_rate + total_spread
 
         if final_price <= 0:
-            raise PricingError(
-                "Final price không hợp lệ."
-            )
-
-        # ----------------------------------------------------------
-        # Precision
-        # ----------------------------------------------------------
+            raise PricingError("Final price không hợp lệ.")
 
         final_price = final_price.quantize(
-            Decimal("0.0001"),
-            rounding=ROUND_HALF_UP,
+            Decimal("0.0001"), rounding=ROUND_HALF_UP
         )
+        issued_at = int(time.time())
 
-        issued_at = int(
-            time.time()
-        )
-
-        # ----------------------------------------------------------
-        # SECURITY:
-        # NEVER return market_rate/spread/customer pricing.
-        # ----------------------------------------------------------
-
-        return {
+        # ---- Response theo role ----
+        result: Dict[str, Any] = {
             "currency": currency,
             "side": side,
             "price": str(final_price),
@@ -410,6 +148,26 @@ class PricingEngine:
             "issued_at": issued_at,
         }
 
+        if role in {"PNV", "STAFF", "BRANCH", "HQ"}:
+            # Market price công khai – CN và HQ được xem
+            result["market_rate"] = str(market_rate)
+            result["branch_margin"] = str(branch_m)
+            try:
+                result["max_branch_margin"] = str(
+                    hq_policy_service.get_max_branch_margin(
+                        pricing_tier, currency
+                    )
+                )
+            except HQPolicyError:
+                pass
 
-# Singleton used by Pricing API
+        if role == "HQ":
+            # Chỉ HQ thấy chính sách cấp 1
+            result["hq_base_spread"] = str(hq_spread)
+            result["pricing_tier"] = pricing_tier
+            result["total_spread"] = str(total_spread)
+
+        return result
+
+
 pricing_engine = PricingEngine()
