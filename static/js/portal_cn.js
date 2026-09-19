@@ -1,12 +1,19 @@
 let lastQuoteId = null;
 let quoteTimer = null;
 let quoteExpireAt = 0;
+let cifCache = [];
 
 function friendlyErr(data, status) {
   if (!data) return "Hệ thống hiện không truy cập được. Vui lòng thử lại sau.";
   if (typeof data === "string" && data.trim().startsWith("<"))
     return "Hệ thống hiện không truy cập được. Vui lòng thử lại sau.";
-  return data.message || data.error || ("Lỗi " + status);
+  const code = data.error || "";
+  if (code === "ACCESS_DENIED" || code === "INVALID_SESSION" || code === "INVALID_SIGNATURE" ||
+      code === "SIGNATURE_REQUIRED" || code === "AUTHENTICATION_REQUIRED")
+    return "Yêu cầu bị từ chối (bảo vệ anti-bot). Vui lòng đăng nhập lại hoặc thử lại sau.";
+  if (status === 429)
+    return "Quá nhiều yêu cầu. Vui lòng thử lại sau.";
+  return data.message || data.error || "Hệ thống hiện không truy cập được. Vui lòng thử lại sau.";
 }
 async function safeJson(res) {
   const text = await res.text();
@@ -20,22 +27,32 @@ async function logout() {
   location.href = "/";
 }
 function fillCifSelects(customers) {
-  ["cif-select", "preset-cif"].forEach((id) => {
-    const sel = document.getElementById(id);
-    sel.innerHTML = "";
-    if (!customers || !customers.length) {
-      const o = document.createElement("option");
-      o.value = ""; o.textContent = "-- Chưa có CIF --";
-      sel.appendChild(o);
-      return;
+  cifCache = customers || [];
+  const allSel = document.getElementById("cif-select");
+  const onlineSel = document.getElementById("preset-cif");
+  allSel.innerHTML = "";
+  onlineSel.innerHTML = "";
+  if (!cifCache.length) {
+    allSel.innerHTML = "<option value=''>-- Chưa có CIF --</option>";
+    onlineSel.innerHTML = "<option value=''>-- Không có CIF online --</option>";
+    return;
+  }
+  cifCache.forEach((c) => {
+    const tag = c.online ? "online" : "offline";
+    const label = (c.cif || c.customer_id) + " – " + (c.customer_name || "") + " [" + tag + "]";
+    const o = document.createElement("option");
+    o.value = c.customer_id;
+    o.textContent = label;
+    allSel.appendChild(o);
+    if (c.online) {
+      const o2 = document.createElement("option");
+      o2.value = c.customer_id;
+      o2.textContent = label;
+      onlineSel.appendChild(o2);
     }
-    customers.forEach((c) => {
-      const o = document.createElement("option");
-      o.value = c.customer_id;
-      o.textContent = (c.cif || c.customer_id) + " – " + (c.customer_name || "");
-      sel.appendChild(o);
-    });
   });
+  if (!onlineSel.options.length)
+    onlineSel.innerHTML = "<option value=''>-- Không có CIF online --</option>";
 }
 async function loadBranches() {
   const r = await safeJson(await fetch("/api/branches", { credentials: "same-origin" }));
@@ -62,13 +79,10 @@ async function loadCifs() {
   if (!r.ok) { fillCifSelects([]); msg.textContent = friendlyErr(r.data, r.status); return; }
   const list = r.data.customers || [];
   fillCifSelects(list);
-  msg.textContent = list.length + " CIF";
+  msg.textContent = list.length + " CIF (online có thể online+offline; offline chỉ qua CN)";
   const sel = document.getElementById("cif-select");
-  sel.onchange = () => {
-    if (sel.value) selectCif(sel.value);
-    document.getElementById("preset-cif").value = sel.value;
-  };
-  if (sel.value) { selectCif(sel.value); document.getElementById("preset-cif").value = sel.value; }
+  sel.onchange = () => { if (sel.value) selectCif(sel.value); };
+  if (sel.value) selectCif(sel.value);
   loadPresets();
 }
 async function selectCif(id) {
@@ -79,8 +93,11 @@ async function selectCif(id) {
   });
 }
 async function savePreset() {
-  const cid = document.getElementById("preset-cif").value || document.getElementById("cif-select").value;
-  if (!cid) { document.getElementById("preset-msg").textContent = "Chọn CIF trước"; return; }
+  const cid = document.getElementById("preset-cif").value;
+  if (!cid) {
+    document.getElementById("preset-msg").textContent = "Chọn CIF online trước";
+    return;
+  }
   await selectCif(cid);
   const body = {
     customer_id: cid,
@@ -92,7 +109,9 @@ async function savePreset() {
     method: "POST", headers: { "Content-Type": "application/json" },
     credentials: "same-origin", body: JSON.stringify(body),
   }));
-  document.getElementById("preset-msg").textContent = r.ok ? "Đã lưu margin CIF " + cid : friendlyErr(r.data, r.status);
+  document.getElementById("preset-msg").textContent = r.ok
+    ? "Đã lưu margin (≤ trần HQ) cho " + cid
+    : friendlyErr(r.data, r.status);
   if (r.ok) loadPresets();
 }
 async function loadPresets() {
@@ -118,7 +137,7 @@ async function delPreset(btn) {
       side: btn.getAttribute("data-s"),
     }),
   }));
-  document.getElementById("preset-msg").textContent = r.ok ? "Đã xóa margin" : friendlyErr(r.data, r.status);
+  document.getElementById("preset-msg").textContent = r.ok ? "Đã xóa" : friendlyErr(r.data, r.status);
   loadPresets();
 }
 async function signed(method, path, bodyObj) {
@@ -138,11 +157,8 @@ function clearQuoteUI(msg) {
   quoteExpireAt = 0;
 }
 async function fetchQuoteOnce() {
-  if (quoteExpireAt && Date.now() / 1000 > quoteExpireAt) {
-    clearQuoteUI("Giá đã hết hiệu lực. Đang lấy giá mới...");
-  }
   const cid = document.getElementById("cif-select").value;
-  if (!cid) { clearQuoteUI("Chọn CIF trước"); return; }
+  if (!cid) { clearQuoteUI("Chọn CIF ở mục 1 trước"); return; }
   await selectCif(cid);
   const bodyObj = {
     currency: document.getElementById("currency").value,
@@ -171,7 +187,9 @@ async function fetchQuoteOnce() {
     quoteExpireAt = (q.issued_at || Math.floor(Date.now() / 1000)) + (q.valid_for_seconds || 30);
     document.getElementById("final-px").textContent = q.price;
     document.getElementById("quote-meta").textContent =
-      "Margin CN: " + (q.branch_margin || "0") + " · Hiệu lực " + q.valid_for_seconds + "s (HQ cấu hình)";
+      "CIF " + cid + " · Margin " + (q.branch_margin || "0") +
+      (q.max_branch_margin ? " (trần HQ " + q.max_branch_margin + ")" : "") +
+      " · Hiệu lực " + q.valid_for_seconds + "s";
     document.getElementById("btn-exec").disabled = false;
   } catch (e) {
     clearQuoteUI(e.message || "Hệ thống hiện không truy cập được. Vui lòng thử lại sau.");
@@ -189,7 +207,7 @@ function stopQuote() {
 async function executeTrade() {
   if (!lastQuoteId) return;
   if (quoteExpireAt && Date.now() / 1000 > quoteExpireAt) {
-    clearQuoteUI("Giá đã hết hiệu lực. Lấy giá mới trước khi giao dịch.");
+    clearQuoteUI("Giá đã hết hiệu lực. Lấy giá mới.");
     return;
   }
   const box = document.getElementById("trade-box");
@@ -209,7 +227,7 @@ async function executeTrade() {
       box.innerHTML = "<p class='error-text'>" + friendlyErr(r.data, r.status) + "</p>";
       return;
     }
-    box.innerHTML = "<p>Đã thực hiện · Mã <strong>" + r.data.transaction.transaction_id +
+    box.innerHTML = "<p>Đã giao dịch · <strong>" + r.data.transaction.transaction_id +
       "</strong> · Giá " + r.data.transaction.price + "</p>";
     clearQuoteUI("Đã giao dịch");
     stopQuote();
