@@ -106,6 +106,7 @@ class CustomerService:
                     "customer_name": c.get("customer_name"),
                     "segment": c.get("segment"),
                     "pricing_tier": c.get("pricing_tier"),
+                    "online": bool(c.get("online", False)),
                 })
             except (CustomerNotFound, CustomerInactive):
                 continue
@@ -140,6 +141,7 @@ class CustomerService:
                 "customer_name": c.get("customer_name"),
                 "segment": c.get("segment"),
                 "pricing_tier": c.get("pricing_tier"),
+                "online": bool(c.get("online", False)),
             }
             for c in customers if c
         ]
