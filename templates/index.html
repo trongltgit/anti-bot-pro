@@ -1,66 +1,109 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Anti-Bot Pro – Hệ thống bảo vệ chuyên nghiệp</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anti-Bot Pro – 3 vai trò HQ / CN / KH</title>
+  <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Anti-Bot Pro</h1>
-            <p class="subtitle">Mô hình bảo vệ chống Bot / Crawling chuyên nghiệp</p>
-        </header>
+  <div class="container">
+    <header>
+      <h1>Anti-Bot Pro – Giá 2 cấp</h1>
+      <p class="subtitle">Hội sở · Chi nhánh · Khách hàng (demo khóa chính sách HQ)</p>
+    </header>
 
-        <section class="info-card">
-            <h2>Thông tin phiên làm việc</h2>
-            <div class="info-grid">
-                <div>
-                    <span class="label">Fingerprint</span>
-                    <code id="fp">{{ fingerprint }}</code>
-                </div>
-                <div>
-                    <span class="label">IP Client</span>
-                    <code>{{ client_ip }}</code>
-                </div>
-            </div>
-        </section>
+    <section class="card">
+      <h2>Đăng nhập theo vai trò</h2>
+      <p class="hint">
+        <strong>HQ</strong> <code>hq01 / demo123</code> – quản lý chính sách cấp 1<br>
+        <strong>CN</strong> <code>staff01 / demo123</code> – nhập margin, xem market + final (không thấy HQ policy)<br>
+        <strong>KH</strong> <code>cust001 / demo123</code> – chỉ thấy final price
+      </p>
+      <div class="form-row">
+        <input type="text" id="username" value="staff01">
+        <input type="password" id="password" value="demo123">
+        <button onclick="doLogin()">Đăng nhập</button>
+        <button class="secondary" onclick="doLogout()">Đăng xuất</button>
+      </div>
+      <p id="login-status">Chưa đăng nhập</p>
+      <pre id="login-result" class="result"></pre>
+    </section>
 
-        <section class="actions">
-            <h2>Kiểm thử các lớp bảo vệ</h2>
-            <div class="btn-group">
-                <button onclick="callApi('/api/public-data')" class="btn btn-primary">
-                    API Công khai (Rate limit vừa)
-                </button>
-                <button onclick="callProtectedApi()" class="btn btn-warning">
-                    API Dữ liệu User (Fingerprint + HMAC)
-                </button>
-                <button onclick="callApi('/api/sensitive')" class="btn btn-danger">
-                    API Nhạy cảm (Giới hạn rất thấp)
-                </button>
-                <a href="/dashboard" class="btn btn-success">Vào Dashboard</a>
-            </div>
-        </section>
+    <!-- HQ only -->
+    <section class="card" id="hq-panel" style="display:none">
+      <h2>Hội sở – Quản lý chính sách giá (cấp 1)</h2>
+      <p class="hint">Chỉ HQ thấy và sửa. CN / KH gọi API này sẽ bị 403.</p>
+      <button onclick="loadHQPolicy()">Tải chính sách HQ</button>
+      <pre id="hq-policy-result" class="result"></pre>
+      <h3>Sửa base_spread</h3>
+      <div class="form-row">
+        <select id="hq-tier">
+          <option>GOLD</option><option>SILVER</option><option>BRONZE</option>
+        </select>
+        <select id="hq-currency">
+          <option>USD</option><option>EUR</option><option>GBP</option>
+          <option>JPY</option><option>AUD</option><option>SGD</option>
+        </select>
+        <select id="hq-side"><option>SELL</option><option>BUY</option></select>
+        <input type="number" id="hq-spread-value" value="15" step="0.1">
+        <button onclick="updateBaseSpread()">Cập nhật base_spread</button>
+      </div>
+      <h3>Sửa trần margin chi nhánh</h3>
+      <div class="form-row">
+        <select id="hq-tier2">
+          <option>GOLD</option><option>SILVER</option><option>BRONZE</option>
+        </select>
+        <select id="hq-currency2">
+          <option>USD</option><option>EUR</option><option>GBP</option>
+          <option>JPY</option><option>AUD</option><option>SGD</option>
+        </select>
+        <input type="number" id="hq-max-margin" value="20" step="0.1">
+        <button onclick="updateMaxMargin()">Cập nhật max_branch_margin</button>
+      </div>
+      <pre id="hq-update-result" class="result"></pre>
+    </section>
 
-        <section class="result-card">
-            <h3>Kết quả phản hồi</h3>
-            <pre id="result">Nhấn nút để test...</pre>
-        </section>
+    <section class="card">
+      <h2>Chọn CIF</h2>
+      <button onclick="loadCustomers()">Tải danh sách CIF</button>
+      <div id="customer-list"></div>
+      <pre id="select-result" class="result"></pre>
+    </section>
 
-        <section class="docs">
-            <h3>Các lớp bảo vệ đang hoạt động</h3>
-            <ul>
-                <li>Rate Limiting theo IP (nhiều mức độ)</li>
-                <li>Browser Fingerprint + Session binding</li>
-                <li>Phát hiện User-Agent bot phổ biến</li>
-                <li>Chữ ký HMAC + chống Replay Attack</li>
-                <li>Phân tách endpoint theo mức độ nhạy cảm</li>
-                <li>Sẵn sàng tích hợp Cloudflare / Redis / Turnstile</li>
-            </ul>
-        </section>
-    </div>
+    <section class="card">
+      <h2>Báo giá / Giao dịch</h2>
+      <p class="hint" id="role-hint">
+        CN: nhập branch_margin · xem market_rate + final price (không thấy HQ base)<br>
+        KH: chỉ final price · HQ: thấy đủ (market + HQ base + margin + final)
+      </p>
+      <div class="form-row">
+        <select id="currency">
+          <option>USD</option><option>EUR</option><option>GBP</option>
+          <option>JPY</option><option>AUD</option><option>SGD</option>
+        </select>
+        <select id="side"><option>SELL</option><option>BUY</option></select>
+        <input type="number" id="amount" value="100000" min="1">
+        <input type="number" id="branch-margin" value="5" min="0" step="0.1" title="Margin chi nhánh">
+        <button onclick="getQuote()">Lấy giá</button>
+      </div>
+      <pre id="quote-result" class="result"></pre>
+      <div class="form-row">
+        <input type="text" id="quote-id" placeholder="quote_id">
+        <button onclick="executeTrade()">Execute giao dịch</button>
+      </div>
+      <pre id="trade-result" class="result"></pre>
+      <button onclick="loadHistory()">Lịch sử</button>
+      <pre id="history-result" class="result"></pre>
+    </section>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <footer>
+      <p>
+        HQ khóa chính sách cấp 1 · CN chỉ chỉnh margin trong trần · KH chỉ final price<br>
+        Market price công khai → CN/HQ được xem · Anti-Bot trên mọi API nhạy cảm
+      </p>
+    </footer>
+  </div>
+  <script src="/static/js/app.js"></script>
 </body>
 </html>
