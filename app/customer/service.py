@@ -6,6 +6,7 @@ Lớp nghiệp vụ: lấy customer, kiểm tra quyền, hạn mức.
 Không tin customer_id từ client – luôn lấy từ session + kiểm tra quyền.
 """
 
+from app.customer.mock_db import list_demo_branches, customers_of_branch, get_demo_branch
 from app.customer.repository import (
     CustomerAPIRepository,
     CustomerAPIError,
@@ -109,3 +110,36 @@ class CustomerService:
             except (CustomerNotFound, CustomerInactive):
                 continue
         return result
+
+
+    def list_branches(self, user: dict):
+        """HQ xem tất cả CN; PNV chỉ thấy CN của mình."""
+        role = (user.get("role") or "").upper()
+        all_b = list_demo_branches()
+        if role == "HQ":
+            return all_b
+        bid = user.get("branch_id")
+        if bid:
+            b = get_demo_branch(bid)
+            return [b] if b else []
+        return []
+
+    def list_customers_by_branch(self, user: dict, branch_id: str):
+        role = (user.get("role") or "").upper()
+        if role == "PNV":
+            if user.get("branch_id") and user.get("branch_id") != branch_id:
+                return []
+        customers = customers_of_branch(branch_id)
+        permitted = set(user.get("permitted_customers") or [])
+        if permitted:
+            customers = [c for c in customers if c and c["customer_id"] in permitted]
+        return [
+            {
+                "customer_id": c["customer_id"],
+                "cif": c.get("cif"),
+                "customer_name": c.get("customer_name"),
+                "segment": c.get("segment"),
+                "pricing_tier": c.get("pricing_tier"),
+            }
+            for c in customers if c
+        ]
