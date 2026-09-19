@@ -3,29 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hội sở – Chính sách giá</title>
+  <title>Hội sở</title>
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
   <div class="container">
     <header class="bar">
-      <div>
-        <h1>Hội sở</h1>
-        <p class="muted">Xin chào, {{ user_name }}</p>
-      </div>
+      <div><h1>Hội sở</h1><p class="muted">Xin chào, {{ user_name }}</p></div>
       <button class="secondary" onclick="logout()">Đăng xuất</button>
     </header>
 
     <section class="card">
       <h2>Chính sách giá cấp 1</h2>
-      <p class="hint">Chỉ Hội sở được xem và chỉnh. Chi nhánh / khách hàng không truy cập được.</p>
       <button onclick="loadPolicy()">Tải chính sách</button>
       <div id="policy-view" class="table-wrap"></div>
       <p id="policy-msg" class="muted"></p>
-    </section>
-
-    <section class="card">
-      <h2>Cập nhật base_spread</h2>
+      <h3>Sửa base_spread</h3>
       <div class="form-row">
         <select id="tier"><option>GOLD</option><option>SILVER</option><option>BRONZE</option></select>
         <select id="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
@@ -33,31 +26,36 @@
         <input type="number" id="spread" value="15" step="0.1">
         <button onclick="updateSpread()">Lưu</button>
       </div>
-      <p id="update-msg" class="muted"></p>
-    </section>
-
-    <section class="card">
-      <h2>Trần margin chi nhánh</h2>
+      <h3>Trần margin chi nhánh</h3>
       <div class="form-row">
         <select id="tier2"><option>GOLD</option><option>SILVER</option><option>BRONZE</option></select>
         <select id="currency2"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
         <input type="number" id="maxm" value="20" step="0.1">
         <button onclick="updateMax()">Lưu</button>
       </div>
+      <p id="update-msg" class="muted"></p>
     </section>
 
     <section class="card">
-      <h2>Kiểm tra báo giá (xem đủ thành phần)</h2>
+      <h2>Chọn CIF & kiểm tra giá (HQ thấy base price)</h2>
       <div class="form-row">
-        <button onclick="loadBranchesHQ(); loadCifs()">Chọn CIF</button>
         <select id="cif-select"></select>
+        <button onclick="loadCifs()">Tải CIF</button>
+      </div>
+      <div class="form-row">
         <select id="q-cur"><option>USD</option><option>EUR</option></select>
         <select id="q-side"><option>SELL</option><option>BUY</option></select>
         <input type="number" id="q-amt" value="100000">
-        <input type="number" id="q-margin" value="0" step="0.1" title="branch margin">
+        <input type="number" id="q-margin" value="0" step="0.1" title="margin CN giả lập">
         <button onclick="quote()">Lấy giá</button>
       </div>
       <div id="quote-box" class="result-box"></div>
+    </section>
+
+    <section class="card">
+      <h2>Lịch sử giao dịch</h2>
+      <button onclick="loadHistory()">Tải lịch sử</button>
+      <div id="history-box" class="result-box"></div>
     </section>
   </div>
   <script src="/static/js/portal_hq.js"></script>

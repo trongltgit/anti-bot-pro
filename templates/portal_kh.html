@@ -3,21 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Khách hàng – Báo giá</title>
+  <title>Khách hàng</title>
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
   <div class="container narrow">
     <header class="bar">
-      <div>
-        <h1>Xin chào, {{ user_name }}</h1>
-        <p class="muted">Báo giá giao dịch</p>
-      </div>
+      <div><h1>Xin chào, {{ user_name }}</h1><p class="muted">Giao dịch online</p></div>
       <button class="secondary" onclick="logout()">Đăng xuất</button>
     </header>
 
     <section class="card">
-      <h2>Yêu cầu báo giá</h2>
+      <h2>Yêu cầu giá</h2>
+      <p class="hint">Giá theo cấu hình chi nhánh đã gắn với tài khoản của bạn.</p>
       <div class="form-col">
         <label>Loại tiền</label>
         <select id="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
@@ -27,14 +25,21 @@
         <input type="number" id="amount" value="100000" min="1">
         <button class="full" onclick="getQuote()">Xem giá</button>
       </div>
+      <p id="msg" class="muted"></p>
     </section>
 
     <section class="card price-card" id="price-card" style="display:none">
       <p class="label">Giá của bạn</p>
       <p class="big-price" id="final-price">—</p>
       <p class="muted" id="price-meta"></p>
-      <button class="full" id="btn-accept" onclick="executeTrade()">Chấp nhận & giao dịch</button>
+      <button class="full" id="btn-accept" onclick="executeTrade()">Chấp nhận giao dịch</button>
       <p id="trade-msg" class="muted"></p>
+    </section>
+
+    <section class="card">
+      <h2>Lịch sử giao dịch</h2>
+      <button onclick="loadHistory()">Tải lịch sử</button>
+      <div id="history-box" class="result-box"></div>
     </section>
   </div>
   <script src="/static/js/portal_kh.js"></script>

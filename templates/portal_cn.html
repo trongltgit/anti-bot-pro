@@ -3,52 +3,56 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chi nhánh – Giao dịch</title>
+  <title>Chi nhánh</title>
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
   <div class="container">
     <header class="bar">
-      <div>
-        <h1>Chi nhánh</h1>
-        <p class="muted">Xin chào, {{ user_name }}</p>
-      </div>
+      <div><h1>Chi nhánh</h1><p class="muted">Xin chào, {{ user_name }}</p></div>
       <button class="secondary" onclick="logout()">Đăng xuất</button>
     </header>
 
     <section class="card">
-      <h2>1. Chi nhánh của bạn</h2>
+      <h2>1. Chi nhánh & CIF</h2>
       <select id="branch-select" class="full-select"></select>
-      <p id="branch-msg" class="muted"></p>
-    </section>
-
-    <section class="card">
-      <h2>2. Chọn CIF khách hàng thuộc CN</h2>
-      <select id="cif-select" class="full-select"></select>
+      <select id="cif-select" class="full-select" style="margin-top:0.5rem"></select>
       <p id="cif-msg" class="muted"></p>
     </section>
 
     <section class="card">
-      <h2>3. Báo giá</h2>
-      <p class="hint">Thấy giá thị trường + margin CN. Không thấy chính sách Hội sở.</p>
+      <h2>2. Cài margin cho KH online</h2>
+      <p class="hint">CIF online dùng margin này để tự lấy giá, không cần bạn quote từng lần.</p>
       <div class="form-row">
-        <select id="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
-        <select id="side"><option>SELL</option><option>BUY</option></select>
-        <input type="number" id="amount" value="100000" min="1" placeholder="Số tiền">
-        <input type="number" id="margin" value="5" min="0" step="0.1" placeholder="Margin CN">
-        <button onclick="getQuote()">Lấy giá</button>
+        <select id="p-cur"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
+        <select id="p-side"><option>SELL</option><option>BUY</option></select>
+        <input type="number" id="p-margin" value="5" min="0" step="0.1" placeholder="Margin">
+        <button onclick="savePreset()">Lưu margin CIF</button>
       </div>
-      <div id="quote-box" class="result-box"><p class="muted">Chưa có báo giá</p></div>
+      <p id="preset-msg" class="muted"></p>
     </section>
 
     <section class="card">
-      <h2>4. Xác nhận giao dịch</h2>
-      <button onclick="executeTrade()" id="btn-exec" disabled>Thực hiện giao dịch</button>
+      <h2>3. Báo giá (KH offline / kiểm tra)</h2>
+      <p class="hint">Chỉ hiển thị <strong>giá khách hàng</strong>. Base price Hội sở không hiển thị. Giá cập nhật theo chu kỳ HQ.</p>
+      <div class="form-row">
+        <select id="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
+        <select id="side"><option>SELL</option><option>BUY</option></select>
+        <input type="number" id="amount" value="100000" min="1">
+        <input type="number" id="margin" value="5" min="0" step="0.1" placeholder="Margin CN">
+        <button onclick="startQuote()">Bắt đầu theo dõi giá</button>
+        <button class="secondary" onclick="stopQuote()">Dừng</button>
+      </div>
+      <div id="quote-box" class="result-box">
+        <div class="price-line highlight"><span>Giá khách hàng</span><strong id="final-px">—</strong></div>
+        <p class="muted small" id="quote-meta"></p>
+      </div>
+      <button onclick="executeTrade()" id="btn-exec" disabled style="margin-top:0.75rem">Đồng ý & thực hiện giao dịch</button>
       <div id="trade-box" class="result-box"></div>
     </section>
 
     <section class="card">
-      <h2>Lịch sử</h2>
+      <h2>Lịch sử giao dịch</h2>
       <button onclick="loadHistory()">Tải lịch sử</button>
       <div id="history-box" class="result-box"></div>
     </section>
