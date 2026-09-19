@@ -373,6 +373,26 @@ def cn_list_margin_preset():
     return jsonify({"status": "success", "presets": items}), 200
 
 
+
+@api_bp.route("/cn/margin-preset/delete", methods=["POST"])
+@custom_rate_limit("30 per minute")
+@auth_required
+def cn_delete_margin_preset():
+    role = (session.get("role") or "").upper()
+    if role not in {"PNV", "STAFF", "BRANCH"}:
+        return jsonify({"error": "FORBIDDEN", "message": "Chỉ chi nhánh được xóa margin."}), 403
+    data = request.get_json(silent=True) or {}
+    from services.cn_margin_store import delete_preset
+    ok = delete_preset(
+        str(data.get("customer_id", "")).strip(),
+        str(data.get("currency", "")).upper().strip(),
+        str(data.get("side", "")).upper().strip(),
+    )
+    if not ok:
+        return jsonify({"error": "NOT_FOUND", "message": "Không tìm thấy margin đã lưu."}), 404
+    return jsonify({"status": "success"}), 200
+
+
 @api_bp.route("/customers/permitted", methods=["GET"])
 @custom_rate_limit("20 per minute")
 @auth_required
