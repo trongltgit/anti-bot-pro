@@ -16,6 +16,7 @@ from flask import (
 from utils.security import (
     get_client_fingerprint,
     verify_fingerprint,
+    bind_fingerprint,
     is_suspicious_user_agent,
     get_client_ip,
     generate_pricing_signature,
@@ -89,8 +90,8 @@ def login_kh():
 
 
 def _require_role(role: str):
-    if not verify_fingerprint():
-        return render_template("blocked.html", reason="Phiên không hợp lệ"), 403
+    # Gắn/làm mới fingerprint; không chặn cứng sau login
+    bind_fingerprint()
     if not session.get("user_id"):
         return None, "login"
     if (session.get("role") or "").upper() != role.upper():
@@ -185,9 +186,8 @@ def login():
     if is_suspicious_user_agent():
         return jsonify({"error": "ACCESS_DENIED", "message": "Request bị từ chối"}), 403
 
-    # Đảm bảo có fingerprint
-    if not session.get("fingerprint"):
-        session["fingerprint"] = get_client_fingerprint()
+    # Luôn gắn fingerprint hiện tại khi đăng nhập
+    bind_fingerprint()
 
     data = request.get_json(silent=True) or {}
     username = str(data.get("username", "")).strip()
@@ -211,6 +211,8 @@ def login():
     session["user_name"] = user.get("name")
     session["role"] = user.get("role")
     session["permitted_customers"] = user.get("permitted_customers") or []
+    session["branch_id"] = user.get("branch_id")
+    session["branch_ids"] = user.get("branch_ids") or []
     session.permanent = True
 
     # Customer portal tự gắn CIF
@@ -308,6 +310,45 @@ def select_customer():
             "pricing_tier": customer.get("pricing_tier"),
         },
     }), 200
+
+
+
+
+@api_bp.route("/branches", methods=["GET"])
+@custom_rate_limit("30 per minute")
+@auth_required
+def list_branches():
+    user = {
+        "user_id": session.get("user_id"),
+        "role": session.get("role"),
+        "branch_id": session.get("branch_id"),
+        "permitted_customers": session.get("permitted_customers") or [],
+    }
+    items = customer_service.list_branches(user)
+    # Không lộ customer_ids thừa cho CN nếu cần – HQ được xem
+    safe = []
+    for b in items:
+        if not b:
+            continue
+        safe.append({
+            "branch_id": b["branch_id"],
+            "branch_name": b["branch_name"],
+        })
+    return jsonify({"status": "success", "branches": safe}), 200
+
+
+@api_bp.route("/branches/<branch_id>/customers", methods=["GET"])
+@custom_rate_limit("30 per minute")
+@auth_required
+def branch_customers(branch_id):
+    user = {
+        "user_id": session.get("user_id"),
+        "role": session.get("role"),
+        "branch_id": session.get("branch_id"),
+        "permitted_customers": session.get("permitted_customers") or [],
+    }
+    items = customer_service.list_customers_by_branch(user, branch_id)
+    return jsonify({"status": "success", "customers": items}), 200
 
 
 @api_bp.route("/customers/permitted", methods=["GET"])
