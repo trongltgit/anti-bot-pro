@@ -1,26 +1,23 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard – Anti-Bot Pro</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard – Anti-Bot Pro</title>
+  <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Dashboard được bảo vệ</h1>
-            <p class="subtitle">Bạn đã vượt qua kiểm tra Fingerprint</p>
-        </header>
-
-        <section class="info-card success">
-            <h2>Truy cập hợp lệ</h2>
-            <p>Trang này chỉ hiển thị khi fingerprint khớp với session. Đây là nơi bạn có thể đặt các thông tin giao dịch / số dư (đã mask) của khách hàng.</p>
-        </section>
-
-        <div class="btn-group">
-            <a href="/" class="btn btn-primary">Quay lại trang chủ</a>
-        </div>
-    </div>
+  <div class="container">
+    <header>
+      <h1>Dashboard Giao dịch</h1>
+      <p>Xin chào, <strong>{{ user_name }}</strong> ({{ role }})</p>
+      <p>CIF hiện tại: <code>{{ customer_id or 'Chưa chọn' }}</code> / {{ cif or '-' }}</p>
+      <a href="/">← Về trang chính</a>
+    </header>
+    <section class="card">
+      <p>Sử dụng trang chính để lấy giá và thực hiện giao dịch.</p>
+      <p>Tất cả request nhạy cảm đều qua Anti-Bot (Fingerprint + HMAC + Rate limit + Auth).</p>
+    </section>
+  </div>
 </body>
 </html>
