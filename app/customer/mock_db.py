@@ -57,6 +57,20 @@ DEMO_CUSTOMERS = {
     },
 }
 
+
+DEMO_BRANCHES = {
+    "CN001": {
+        "branch_id": "CN001",
+        "branch_name": "Chi nhanh Quan 1",
+        "customer_ids": ["CUST001", "CUST003"],
+    },
+    "CN002": {
+        "branch_id": "CN002",
+        "branch_name": "Chi nhanh Quan 3",
+        "customer_ids": ["CUST002"],
+    },
+}
+
 DEMO_USERS = {
     # === HỘI SỞ ===
     "hq01": {
@@ -65,6 +79,7 @@ DEMO_USERS = {
         "role": "HQ",
         "name": "Quan tri Hoi so",
         "permitted_customers": ["CUST001", "CUST002", "CUST003"],
+        "branch_ids": ["CN001", "CN002"],
     },
     # === CHI NHÁNH (Người bán) ===
     "staff01": {
@@ -72,13 +87,15 @@ DEMO_USERS = {
         "password": "demo123",
         "role": "PNV",
         "name": "Nhan vien CN A",
-        "permitted_customers": ["CUST001", "CUST002", "CUST003"],
+        "branch_id": "CN001",
+        "permitted_customers": ["CUST001", "CUST003"],
     },
     "staff02": {
         "user_id": "staff02",
         "password": "demo123",
         "role": "PNV",
         "name": "Nhan vien CN B",
+        "branch_id": "CN002",
         "permitted_customers": ["CUST002"],
     },
     # === KHÁCH HÀNG ===
@@ -119,3 +136,19 @@ def authenticate_demo_user(username: str, password: str):
         return None
     safe = {k: v for k, v in user.items() if k != "password"}
     return deepcopy(safe)
+
+
+def list_demo_branches():
+    return [deepcopy(b) for b in DEMO_BRANCHES.values()]
+
+
+def get_demo_branch(branch_id: str):
+    b = DEMO_BRANCHES.get(branch_id)
+    return deepcopy(b) if b else None
+
+
+def customers_of_branch(branch_id: str):
+    b = DEMO_BRANCHES.get(branch_id)
+    if not b:
+        return []
+    return [get_demo_customer(cid) for cid in b["customer_ids"] if get_demo_customer(cid)]
