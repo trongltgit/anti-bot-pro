@@ -11,6 +11,7 @@ from flask import (
     request,
     jsonify,
     session,
+    redirect,
 )
 
 from utils.security import (
@@ -36,11 +37,19 @@ customer_service = CustomerService()
 @main_bp.route("/")
 @custom_rate_limit("30 per minute")
 def index():
-    """Trang chọn cổng – gắn fingerprint"""
-    fingerprint = get_client_fingerprint()
-    session["fingerprint"] = fingerprint
+    """Trang đăng nhập chung – gắn fingerprint"""
+    bind_fingerprint()
     session["first_seen"] = int(time.time())
     session["page_views"] = session.get("page_views", 0) + 1
+    # Đã login thì chuyển đúng portal
+    role = (session.get("role") or "").upper()
+    if session.get("user_id"):
+        if role == "HQ":
+            return portal_hq()
+        if role == "PNV":
+            return portal_cn()
+        if role == "CUSTOMER":
+            return portal_kh()
     return render_template("index.html")
 
 
@@ -90,12 +99,11 @@ def login_kh():
 
 
 def _require_role(role: str):
-    # Gắn/làm mới fingerprint; không chặn cứng sau login
     bind_fingerprint()
     if not session.get("user_id"):
         return None, "login"
     if (session.get("role") or "").upper() != role.upper():
-        return render_template("blocked.html", reason="Sai cổng đăng nhập"), 403
+        return render_template("blocked.html", reason="Tài khoản không có quyền truy cập trang này"), 403
     return None, "ok"
 
 
@@ -104,14 +112,7 @@ def _require_role(role: str):
 def portal_hq():
     err, st = _require_role("HQ")
     if st == "login":
-        return render_template(
-            "login.html",
-            portal_title="Hội sở",
-            portal_desc="Quản lý chính sách giá cấp 1",
-            expected_role="HQ",
-            redirect_url="/portal/hq",
-            default_user="hq01",
-        )
+        return redirect("/")
     if err:
         return err
     return render_template("portal_hq.html", user_name=session.get("user_name"))
@@ -122,14 +123,7 @@ def portal_hq():
 def portal_cn():
     err, st = _require_role("PNV")
     if st == "login":
-        return render_template(
-            "login.html",
-            portal_title="Chi nhánh",
-            portal_desc="Báo giá và giao dịch khách hàng",
-            expected_role="PNV",
-            redirect_url="/portal/cn",
-            default_user="staff01",
-        )
+        return redirect("/")
     if err:
         return err
     return render_template("portal_cn.html", user_name=session.get("user_name"))
@@ -140,14 +134,7 @@ def portal_cn():
 def portal_kh():
     err, st = _require_role("CUSTOMER")
     if st == "login":
-        return render_template(
-            "login.html",
-            portal_title="Khách hàng",
-            portal_desc="Xem giá và xác nhận giao dịch",
-            expected_role="CUSTOMER",
-            redirect_url="/portal/kh",
-            default_user="cust001",
-        )
+        return redirect("/")
     if err:
         return err
     return render_template("portal_kh.html", user_name=session.get("user_name"))
