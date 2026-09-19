@@ -17,15 +17,20 @@
     </header>
 
     <section class="card">
-      <h2>Chọn khách hàng</h2>
-      <button onclick="loadCifs()">Tải danh sách</button>
+      <h2>1. Chi nhánh của bạn</h2>
+      <select id="branch-select" class="full-select"></select>
+      <p id="branch-msg" class="muted"></p>
+    </section>
+
+    <section class="card">
+      <h2>2. Chọn CIF khách hàng thuộc CN</h2>
       <select id="cif-select" class="full-select"></select>
       <p id="cif-msg" class="muted"></p>
     </section>
 
     <section class="card">
-      <h2>Báo giá</h2>
-      <p class="hint">Bạn thấy giá thị trường và margin chi nhánh. Không thấy chính sách Hội sở.</p>
+      <h2>3. Báo giá</h2>
+      <p class="hint">Thấy giá thị trường + margin CN. Không thấy chính sách Hội sở.</p>
       <div class="form-row">
         <select id="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
         <select id="side"><option>SELL</option><option>BUY</option></select>
@@ -33,21 +38,17 @@
         <input type="number" id="margin" value="5" min="0" step="0.1" placeholder="Margin CN">
         <button onclick="getQuote()">Lấy giá</button>
       </div>
-      <div id="quote-box" class="result-box">
-        <p class="muted">Chưa có báo giá</p>
-      </div>
+      <div id="quote-box" class="result-box"><p class="muted">Chưa có báo giá</p></div>
     </section>
 
     <section class="card">
-      <h2>Xác nhận giao dịch</h2>
-      <div class="form-row">
-        <button onclick="executeTrade()" id="btn-exec" disabled>Thực hiện giao dịch</button>
-      </div>
+      <h2>4. Xác nhận giao dịch</h2>
+      <button onclick="executeTrade()" id="btn-exec" disabled>Thực hiện giao dịch</button>
       <div id="trade-box" class="result-box"></div>
     </section>
 
     <section class="card">
-      <h2>Lịch sử gần đây</h2>
+      <h2>Lịch sử</h2>
       <button onclick="loadHistory()">Tải lịch sử</button>
       <div id="history-box" class="result-box"></div>
     </section>
