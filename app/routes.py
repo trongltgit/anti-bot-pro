@@ -37,19 +37,10 @@ customer_service = CustomerService()
 @main_bp.route("/")
 @custom_rate_limit("30 per minute")
 def index():
-    """Trang đăng nhập chung – gắn fingerprint"""
+    """Trang đăng nhập chung – luôn hiện form login"""
     bind_fingerprint()
     session["first_seen"] = int(time.time())
     session["page_views"] = session.get("page_views", 0) + 1
-    # Đã login thì chuyển đúng portal
-    role = (session.get("role") or "").upper()
-    if session.get("user_id"):
-        if role == "HQ":
-            return portal_hq()
-        if role == "PNV":
-            return portal_cn()
-        if role == "CUSTOMER":
-            return portal_kh()
     return render_template("index.html")
 
 
