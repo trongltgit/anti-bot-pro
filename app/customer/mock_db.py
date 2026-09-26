@@ -3,9 +3,10 @@ Mock Customer DB + Users (Demo)
 ===============================
 
 Roles:
-  HQ       – Hội sở: quản lý chính sách giá cấp 1 (chỉ HQ thấy/sửa)
-  PNV      – Chi nhánh: nhập margin, xem market + final price (không thấy HQ policy)
-  CUSTOMER – Khách hàng: chỉ thấy final price
+  HQ        – Hội sở (TSC): thấy hết; margin CN chỉ sau deal done
+  CN_ADMIN  – Admin chi nhánh: gán CIF cho nhân viên, xem log CN
+  PNV       – Nhân viên CN: chỉ CIF được gán; multi-quote
+  CUSTOMER  – Khách hàng: chỉ giá điều hòa (TGDH); CIF phải online
 """
 
 from copy import deepcopy
@@ -54,6 +55,7 @@ DEMO_CUSTOMERS = {
         "segment": "STANDARD",
         "status": "INACTIVE",
         "pricing_tier": "BRONZE",
+        "online": False,
         "daily_limit": 100000,
         "monthly_limit": 1000000,
         "currency_permissions": ["USD"],
@@ -75,7 +77,7 @@ DEMO_BRANCHES = {
 }
 
 DEMO_USERS = {
-    # === HỘI SỞ ===
+    # === HỘI SỞ (TSC) ===
     "hq01": {
         "user_id": "hq01",
         "password": "demo123",
@@ -84,7 +86,16 @@ DEMO_USERS = {
         "permitted_customers": ["CUST001", "CUST002", "CUST003"],
         "branch_ids": ["CN001", "CN002"],
     },
-    # === CHI NHÁNH (Người bán) ===
+    # === ADMIN CHI NHÁNH ===
+    "admin_cn01": {
+        "user_id": "admin_cn01",
+        "password": "demo123",
+        "role": "CN_ADMIN",
+        "name": "Admin CN Quan 1",
+        "branch_id": "CN001",
+        "permitted_customers": ["CUST001", "CUST003"],
+    },
+    # === NHÂN VIÊN CN ===
     "staff01": {
         "user_id": "staff01",
         "password": "demo123",
@@ -120,25 +131,23 @@ def get_demo_customer(customer_id: str):
     return deepcopy(data)
 
 
-def get_demo_customer_by_cif(cif: str):
+def list_demo_customers_by_ids(ids):
+    out = []
     for c in DEMO_CUSTOMERS.values():
-        if c.get("cif") == cif:
-            return deepcopy(c)
-    return None
+        if c["customer_id"] in (ids or []):
+            out.append(deepcopy(c))
+    return out
 
 
-def list_demo_customers():
+def list_active_customers():
     return [deepcopy(c) for c in DEMO_CUSTOMERS.values() if c["status"] == "ACTIVE"]
 
 
-def authenticate_demo_user(username: str, password: str):
+def get_demo_user(username: str):
     user = DEMO_USERS.get(username)
     if not user:
         return None
-    if user.get("password") != password:
-        return None
-    safe = {k: v for k, v in user.items() if k != "password"}
-    return deepcopy(safe)
+    return deepcopy(user)
 
 
 def list_demo_branches():
@@ -147,11 +156,55 @@ def list_demo_branches():
 
 def get_demo_branch(branch_id: str):
     b = DEMO_BRANCHES.get(branch_id)
-    return deepcopy(b) if b else None
+    if not b:
+        return None
+    return deepcopy(b)
+
+
+def assign_cif_to_staff(admin_user_id: str, staff_user_id: str, customer_ids: list):
+    """CN_ADMIN gán CIF cho nhân viên."""
+    admin = DEMO_USERS.get(admin_user_id)
+    staff = DEMO_USERS.get(staff_user_id)
+    if not admin or admin.get("role") != "CN_ADMIN":
+        return False, "Chỉ Admin CN được gán CIF."
+    if not staff or staff.get("role") not in {"PNV", "STAFF"}:
+        return False, "User không phải nhân viên CN."
+    if admin.get("branch_id") != staff.get("branch_id"):
+        return False, "Khác chi nhánh."
+    branch = DEMO_BRANCHES.get(admin.get("branch_id") or "")
+    allowed = set((branch or {}).get("customer_ids") or [])
+    for cid in customer_ids:
+        if cid not in allowed:
+            return False, f"CIF {cid} không thuộc chi nhánh."
+    staff["permitted_customers"] = list(customer_ids)
+    return True, "OK"
+
+
+def set_customer_online(customer_id: str, online: bool, actor_role: str, branch_id: str = ""):
+    c = DEMO_CUSTOMERS.get(customer_id)
+    if not c:
+        return False, "Không tìm thấy CIF."
+    if actor_role not in {"CN_ADMIN", "PNV", "STAFF", "HQ"}:
+        return False, "Không có quyền."
+    if actor_role != "HQ" and branch_id:
+        branch = DEMO_BRANCHES.get(branch_id)
+        if not branch or customer_id not in branch.get("customer_ids", []):
+            return False, "CIF không thuộc chi nhánh."
+    c["online"] = bool(online)
+    return True, "OK"
+
+
+def authenticate_demo_user(username: str, password: str):
+    user = DEMO_USERS.get(username)
+    if not user:
+        return None
+    if user.get("password") != password:
+        return None
+    return deepcopy(user)
 
 
 def customers_of_branch(branch_id: str):
     b = DEMO_BRANCHES.get(branch_id)
     if not b:
         return []
-    return [get_demo_customer(cid) for cid in b["customer_ids"] if get_demo_customer(cid)]
+    return list_demo_customers_by_ids(b.get("customer_ids") or [])
