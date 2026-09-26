@@ -2,6 +2,7 @@ let lastQuoteId = null;
 let quoteTimer = null;
 let quoteExpireAt = 0;
 let cifCache = [];
+let batchRows = [];
 
 function friendlyErr(data, status) {
   if (!data) return "Hệ thống hiện không truy cập được. Vui lòng thử lại sau.";
@@ -9,8 +10,12 @@ function friendlyErr(data, status) {
     return "Hệ thống hiện không truy cập được. Vui lòng thử lại sau.";
   const code = data.error || "";
   if (code === "ACCESS_DENIED" || code === "INVALID_SESSION" || code === "INVALID_SIGNATURE" ||
-      code === "SIGNATURE_REQUIRED" || code === "AUTHENTICATION_REQUIRED")
-    return "Yêu cầu bị từ chối (bảo vệ anti-bot). Vui lòng đăng nhập lại hoặc thử lại sau.";
+      code === "SIGNATURE_REQUIRED" || code === "AUTHENTICATION_REQUIRED" || code === "SESSION_EXPIRED")
+    return data.message || "Yêu cầu bị từ chối. Vui lòng đăng nhập lại.";
+  if (code === "BLOCKED") {
+    location.href = data.redirect || "/blocked";
+    return "Bị chặn.";
+  }
   if (status === 429)
     return "Quá nhiều yêu cầu. Vui lòng thử lại sau.";
   return data.message || data.error || "Hệ thống hiện không truy cập được. Vui lòng thử lại sau.";
@@ -79,7 +84,7 @@ async function loadCifs() {
   if (!r.ok) { fillCifSelects([]); msg.textContent = friendlyErr(r.data, r.status); return; }
   const list = r.data.customers || [];
   fillCifSelects(list);
-  msg.textContent = list.length + " CIF (online có thể online+offline; offline chỉ qua CN)";
+  msg.textContent = list.length + " CIF (online = login+hỏi giá được; offline chỉ qua CN)";
   const sel = document.getElementById("cif-select");
   sel.onchange = () => { if (sel.value) selectCif(sel.value); };
   if (sel.value) selectCif(sel.value);
@@ -91,6 +96,19 @@ async function selectCif(id) {
     method: "POST", headers: { "Content-Type": "application/json" },
     credentials: "same-origin", body: JSON.stringify({ customer_id: id }),
   });
+}
+async function toggleOnline() {
+  const cid = document.getElementById("cif-select").value;
+  if (!cid) return;
+  const online = document.getElementById("set-online").checked;
+  const r = await safeJson(await fetch("/api/cn/set-online", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    credentials: "same-origin", body: JSON.stringify({ customer_id: cid, online }),
+  }));
+  document.getElementById("cif-msg").textContent = r.ok
+    ? (online ? "Đã bật online cho " + cid : "Đã tắt online " + cid)
+    : friendlyErr(r.data, r.status);
+  if (r.ok) loadCifs();
 }
 async function savePreset() {
   const cid = document.getElementById("preset-cif").value;
@@ -191,7 +209,6 @@ async function fetchQuoteOnce() {
       "CIF " + cid + " · " + sideLabel +
       " · Margin " + (q.branch_margin || "0") +
       (q.max_branch_margin ? " (trần HQ " + q.max_branch_margin + ")" : "") +
-      (q.tgdh ? " · TGDH " + q.tgdh : "") +
       " · Hiệu lực " + q.valid_for_seconds + "s (auto 30s)";
     document.getElementById("btn-exec").disabled = false;
   } catch (e) {
@@ -201,7 +218,6 @@ async function fetchQuoteOnce() {
 function startQuote() {
   stopQuote();
   fetchQuoteOnce();
-  // CN/KH: tự động cập nhật giá mới sau mỗi 30 giây
   quoteTimer = setInterval(fetchQuoteOnce, 30000);
 }
 function stopQuote() {
@@ -232,13 +248,106 @@ async function executeTrade() {
       return;
     }
     box.innerHTML = "<p>Đã giao dịch · <strong>" + r.data.transaction.transaction_id +
-      "</strong> · Giá " + r.data.transaction.price + "</p>";
+      "</strong> · Giá " + r.data.transaction.price +
+      (r.data.transaction.branch_margin != null ? " · Margin " + r.data.transaction.branch_margin : "") +
+      "</p>";
     clearQuoteUI("Đã giao dịch");
     stopQuote();
   } catch (e) {
     box.innerHTML = "<p class='error-text'>" + (e.message || "Hệ thống hiện không truy cập được.") + "</p>";
   }
 }
+
+/* ===== Multi CIF / multi dòng cùng lúc ===== */
+function addBatchRow() {
+  const cid = document.getElementById("cif-select").value || "";
+  batchRows.push({
+    customer_id: cid,
+    currency: "USD",
+    side: "SELL",
+    amount: 100000,
+    branch_margin: 5,
+  });
+  renderBatch();
+}
+function renderBatch() {
+  const box = document.getElementById("batch-list");
+  if (!batchRows.length) {
+    box.innerHTML = "<p class='muted'>Chưa có dòng. Bấm \"Thêm dòng\" (cùng CIF không giới hạn).</p>";
+    return;
+  }
+  box.innerHTML = batchRows.map((row, i) => `
+    <div class="form-row batch-row" data-i="${i}">
+      <input value="${row.customer_id}" placeholder="CIF id" onchange="batchRows[${i}].customer_id=this.value" style="width:7rem">
+      <select onchange="batchRows[${i}].currency=this.value">
+        ${["USD","EUR","GBP","JPY","AUD","SGD"].map(c => `<option ${c===row.currency?"selected":""}>${c}</option>`).join("")}
+      </select>
+      <select onchange="batchRows[${i}].side=this.value">
+        <option value="SELL" ${row.side==="SELL"?"selected":""}>SELL NH bán</option>
+        <option value="BUY" ${row.side==="BUY"?"selected":""}>BUY NH mua</option>
+      </select>
+      <input type="number" value="${row.amount}" style="width:6rem" onchange="batchRows[${i}].amount=Number(this.value)">
+      <input type="number" value="${row.branch_margin}" step="0.1" style="width:4rem" onchange="batchRows[${i}].branch_margin=Number(this.value)" title="margin">
+      <button type="button" class="secondary" onclick="batchRows.splice(${i},1);renderBatch()">X</button>
+    </div>
+  `).join("");
+}
+async function runBatchQuote() {
+  const box = document.getElementById("batch-result");
+  if (!batchRows.length) { box.innerHTML = "<p class='muted'>Chưa có dòng</p>"; return; }
+  try {
+    const { headers, body } = await signed("POST", "/api/transaction/quote-batch", { items: batchRows });
+    const r = await safeJson(await fetch("/api/transaction/quote-batch", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Timestamp": headers["X-Timestamp"],
+        "X-Nonce": headers["X-Nonce"],
+        "X-Signature": headers["X-Signature"],
+      },
+      credentials: "same-origin", body,
+    }));
+    if (!r.ok) { box.innerHTML = "<p class='error-text'>" + friendlyErr(r.data, r.status) + "</p>"; return; }
+    box.innerHTML = (r.data.quotes || []).map(q => {
+      if (q.error) return `<div class="price-line"><span>${q.customer_id} ${q.currency} ${q.side}</span><span class="error-text">${q.error}</span></div>`;
+      const lab = q.side === "BUY" ? "NH mua" : "NH bán";
+      return `<div class="price-line"><span>${q.customer_id} · ${q.currency} ${lab}</span><strong>${q.price}</strong> <span class="muted">m=${q.branch_margin||0}</span></div>`;
+    }).join("");
+  } catch (e) {
+    box.innerHTML = "<p class='error-text'>" + e.message + "</p>";
+  }
+}
+
+/* ===== Admin CN ===== */
+async function loadStaff() {
+  const box = document.getElementById("staff-box");
+  if (!box) return;
+  const r = await safeJson(await fetch("/api/cn/staff-list", { credentials: "same-origin" }));
+  if (!r.ok) { box.innerHTML = "<p class='muted'>" + friendlyErr(r.data, r.status) + "</p>"; return; }
+  box.innerHTML = (r.data.staff || []).map(s =>
+    `<div class="price-line"><span>${s.user_id} – ${s.name}</span><span>CIF: ${(s.permitted_customers||[]).join(", ")||"—"}</span></div>`
+  ).join("") || "<p class='muted'>Chưa có nhân viên</p>";
+}
+async function assignCif() {
+  const staff = document.getElementById("assign-staff").value;
+  const cifs = document.getElementById("assign-cifs").value.split(/[,\s]+/).filter(Boolean);
+  const r = await safeJson(await fetch("/api/cn/assign-cif", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    credentials: "same-origin", body: JSON.stringify({ staff_user_id: staff, customer_ids: cifs }),
+  }));
+  document.getElementById("assign-msg").textContent = r.ok ? "Đã gán CIF" : friendlyErr(r.data, r.status);
+  if (r.ok) loadStaff();
+}
+async function loadCnLogs() {
+  const box = document.getElementById("cn-log-box");
+  if (!box) return;
+  const r = await safeJson(await fetch("/api/transaction/audit-logs", { credentials: "same-origin" }));
+  if (!r.ok) { box.innerHTML = "<p class='muted'>" + friendlyErr(r.data, r.status) + "</p>"; return; }
+  box.innerHTML = (r.data.logs || []).slice().reverse().map(l =>
+    `<div class="price-line"><span>${l.event}</span><span>${l.user_id} · ${l.customer_id||""} · ${l.ts}</span></div>`
+  ).join("") || "<p class='muted'>Chưa có log</p>";
+}
+
 async function loadHistory() {
   const box = document.getElementById("history-box");
   const r = await safeJson(await fetch("/api/transaction/history", { credentials: "same-origin" }));
@@ -248,8 +357,8 @@ async function loadHistory() {
   }
   const rows = (r.data.transactions || []).map(
     (t) => "<div class='price-line'><span>" + t.transaction_id + "</span><span>" +
-      t.currency + " " + t.side + " · " + t.price + "</span></div>"
+      t.currency + " " + t.side + " · " + t.price +
+      (t.branch_margin != null ? " · m=" + t.branch_margin : "") + "</span></div>"
   );
   box.innerHTML = rows.length ? rows.join("") : "<p class='muted'>Chưa có giao dịch</p>";
 }
-loadBranches();

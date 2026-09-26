@@ -176,12 +176,14 @@ async function quote() {
     if (!r.ok) { box.innerHTML = "<p class='error-text'>" + friendlyErr(r.data, r.status) + "</p>"; return; }
     const q = r.data.quote;
     const sideLabel = q.side === "BUY" ? "NH mua (KH bán)" : "NH bán (KH mua)";
+    // TSC không thấy margin CN lúc quote — chỉ sau deal done
     box.innerHTML = `
       <p><strong>Base TSC:</strong> ${q.base_price || "—"} · Side: ${sideLabel}</p>
-      <p>HQ spread: ${q.hq_base_spread || "—"} · Margin CN: ${q.branch_margin || "0"} · Total: ${q.total_spread || "—"}</p>
-      <p>TGDH points: ${q.tgdh_points || "0"}</p>
-      <p class="price-line highlight"><span>Final (KH thấy)</span><strong>${q.price}</strong></p>
-      <p class="price-line"><span>TGDH (NSDH)</span><strong>${q.tgdh || q.price}</strong></p>
+      <p>HQ spread: ${q.hq_base_spread || "—"} · Total spread (không gồm margin CN): ${q.total_spread || "—"}</p>
+      <p>TGDH points: ${q.tgdh_points || "0"} (NH bán: trừ · NH mua: cộng)</p>
+      <p class="price-line highlight"><span>Final (trước TGDH)</span><strong>${q.price}</strong></p>
+      <p class="price-line"><span>TGDH / giá KH thấy</span><strong>${q.tgdh || q.price}</strong></p>
+      <p class="muted small">Margin CN chỉ hiện sau khi deal done (lịch sử).</p>
     `;
   } catch (e) {
     box.innerHTML = "<p class='error-text'>" + e.message + "</p>";
@@ -192,7 +194,11 @@ async function loadHistory() {
   const r = await safeJson(await fetch("/api/transaction/history", { credentials: "same-origin" }));
   if (!r.ok) { box.innerHTML = "<p class='error-text'>" + friendlyErr(r.data, r.status) + "</p>"; return; }
   const rows = (r.data.transactions || []).map(
-    (t) => "<div class='price-line'><span>" + t.transaction_id + "</span><span>" + t.currency + " " + t.side + " · " + t.price + "</span></div>"
+    (t) => "<div class='price-line'><span>" + t.transaction_id + "</span><span>" + t.currency + " " + t.side +
+      " · px " + t.price +
+      (t.branch_margin != null ? " · margin CN " + t.branch_margin : "") +
+      (t.base_price ? " · base " + t.base_price : "") +
+      "</span></div>"
   );
   box.innerHTML = rows.length ? rows.join("") : "<p class='muted'>Chưa có giao dịch</p>";
 }
@@ -202,3 +208,14 @@ setInterval(() => {
   const box = document.getElementById("market-box");
   if (box && box.innerHTML) loadMarket();
 }, 20000);
+
+async function loadAuditLogs() {
+  const box = document.getElementById("audit-box");
+  if (!box) return;
+  const r = await safeJson(await fetch("/api/transaction/audit-logs", { credentials: "same-origin" }));
+  if (!r.ok) { box.innerHTML = "<p class='error-text'>" + friendlyErr(r.data, r.status) + "</p>"; return; }
+  box.innerHTML = (r.data.logs || []).slice().reverse().map(l =>
+    "<div class='price-line'><span>" + l.event + " · " + (l.level||"") + "</span><span>" +
+    l.user_id + " · " + (l.customer_id||"") + " · " + l.ip + " · " + l.ts + "</span></div>"
+  ).join("") || "<p class='muted'>Chưa có log</p>";
+}

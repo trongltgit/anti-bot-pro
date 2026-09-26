@@ -7,6 +7,14 @@ function friendlyErr(data, status) {
     return "Hệ thống hiện không truy cập được. Vui lòng thử lại sau.";
   if (data.error === "WAITING_CN_SETUP")
     return data.message || "Chưa có báo giá từ chi nhánh. Vui lòng liên hệ chi nhánh.";
+  if (data.error === "SESSION_EXPIRED" || data.error === "AUTHENTICATION_REQUIRED") {
+    setTimeout(() => { location.href = data.redirect || "/"; }, 1500);
+    return data.message || "Phiên hết hạn. Đăng nhập lại.";
+  }
+  if (data.error === "BLOCKED") {
+    location.href = data.redirect || "/blocked";
+    return "Truy cập bị chặn.";
+  }
   return data.message || data.error || "Hệ thống hiện không truy cập được. Vui lòng thử lại sau.";
 }
 async function safeJson(res) {
