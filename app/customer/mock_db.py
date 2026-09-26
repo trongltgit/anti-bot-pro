@@ -131,6 +131,18 @@ def get_demo_customer(customer_id: str):
     return deepcopy(data)
 
 
+def get_demo_customer_by_cif(cif: str):
+    cif = str(cif or "").strip()
+    for c in DEMO_CUSTOMERS.values():
+        if str(c.get("cif", "")).strip() == cif:
+            return deepcopy(c)
+    return None
+
+
+def list_demo_customers():
+    return [deepcopy(c) for c in DEMO_CUSTOMERS.values()]
+
+
 def list_demo_customers_by_ids(ids):
     out = []
     for c in DEMO_CUSTOMERS.values():
