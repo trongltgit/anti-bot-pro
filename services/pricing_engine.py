@@ -2,22 +2,22 @@
 Pricing Engine
 ==============
 Base TSC → + HQ spread → + CN margin → final_price
-TGDH (ngân sách bù tỷ giá):
-  - NH bán (side=SELL, KH mua): TGDH = final − điểm ngân sách  → thấp hơn final
-  - NH mua (side=BUY,  KH bán): TGDH = final + điểm ngân sách  → cao hơn final
+NSDH / TGDH (tùy chọn – chỉ khi CN chọn dùng ngân sách điều hòa):
+  - NH bán (SELL): TGDH = final − điểm NSDH
+  - NH mua (BUY):  TGDH = final + điểm NSDH
 
-KH chỉ thấy giá đã điều hòa (TGDH) — không thấy final thô.
-CN chỉ thấy final + margin CN (không thấy base/spread/TGDH points).
-TSC thấy toàn bộ; margin CN chỉ lộ sau khi deal done.
+CN chỉ thấy: final_price + margin CN + (tgdh nếu chọn NSDH)
+KH chỉ thấy: giá đã điều hòa nếu CN set NSDH, không thì final
+TSC thấy hết; margin CN chỉ lộ sau deal done.
 
-Side API = chiều Ngân hàng:
-  BUY  = NH mua  (KH bán) → base − spread → thấp
-  SELL = NH bán  (KH mua) → base + spread → cao
-→ Cùng thời điểm + cùng CIF: giá KH mua > giá KH bán (luôn đúng).
+Side API = chiều NH:
+  BUY  = NH mua  → base − spread (thấp)
+  SELL = NH bán  → base + spread (cao)
+→ Cùng CIF + cùng lúc: giá KH mua > giá KH bán.
 """
 
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 import os
 import time
 from services.hq_policy import hq_policy_service, HQPolicyError
@@ -30,7 +30,7 @@ class PricingError(Exception):
 class PricingEngine:
     SUPPORTED_CURRENCIES = {"USD", "EUR", "GBP", "JPY", "AUD", "SGD"}
     SUPPORTED_SIDES = {"BUY", "SELL"}
-    DEFAULT_VALID_SECONDS = 30
+    DEFAULT_VALID_SECONDS = 60
 
     def __init__(self):
         try:
@@ -75,9 +75,12 @@ class PricingEngine:
         base_price: Any,
         branch_margin: Any = 0,
         viewer_role: str = "CUSTOMER",
+        use_nsdh: bool = False,
+        nsdh_points: Any = 0,
     ) -> Dict[str, Any]:
         """
-        side: chiều NH (BUY=NH mua, SELL=NH bán).
+        use_nsdh: CN chọn dùng ngân sách điều hòa hay không.
+        nsdh_points: số điểm CN set (chỉ áp khi use_nsdh=True).
         """
         currency = str(currency).upper().strip()
         side = str(side).upper().strip()
@@ -109,7 +112,6 @@ class PricingEngine:
 
         total_spread = hq_spread + branch_m
 
-        # NH BUY < NH SELL  →  KH bán < KH mua
         if side == "BUY":
             final_price = base_price - total_spread
         else:
@@ -118,70 +120,80 @@ class PricingEngine:
         if final_price <= 0:
             raise PricingError("Final price không hợp lệ.")
 
-        # TGDH = ngân sách bù tỷ giá
-        # NH bán (SELL): trừ điểm → TGDH < final
-        # NH mua (BUY):  cộng điểm → TGDH > final
+        # NSDH / TGDH – chỉ khi CN chọn
+        use_nsdh = bool(use_nsdh)
         try:
-            tgdh_pts = abs(hq_policy_service.get_tgdh_points(currency))
+            pts = abs(Decimal(str(nsdh_points or 0)))
         except Exception:
-            tgdh_pts = Decimal("0")
+            pts = Decimal("0")
 
-        if side == "SELL":
-            # NH bán / KH mua → giá điều hòa thấp hơn final
-            tgdh_price = final_price - tgdh_pts
+        if use_nsdh and pts > 0:
+            if side == "SELL":
+                tgdh_price = final_price - pts
+            else:
+                tgdh_price = final_price + pts
+            if tgdh_price <= 0:
+                raise PricingError("TGDH price không hợp lệ.")
         else:
-            # NH mua / KH bán → giá điều hòa cao hơn final
-            tgdh_price = final_price + tgdh_pts
-
-        if tgdh_price <= 0:
-            raise PricingError("TGDH price không hợp lệ.")
+            tgdh_price = final_price
+            pts = Decimal("0")
+            use_nsdh = False
 
         final_price = final_price.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
         tgdh_price = tgdh_price.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
         issued_at = int(time.time())
 
-        # --- Response theo role ---
-        # KH: chỉ giá đã điều hòa (TGDH)
-        # CN: final + margin CN
-        # HQ: full; margin CN ẩn lúc quote, hiện sau deal
+        # Giá khách hàng nhận = tgdh nếu có NSDH, không thì final
+        customer_price = tgdh_price if use_nsdh else final_price
 
         if role == "CUSTOMER":
             return {
                 "currency": currency,
                 "side": side,
-                "price": str(tgdh_price),
+                "price": str(customer_price),
                 "valid_for_seconds": self.valid_for_seconds,
                 "issued_at": issued_at,
             }
 
+        # CN: CHỈ final + margin CN + (tgdh nếu chọn NSDH). KHÔNG base, KHÔNG HQ spread.
         if role in {"PNV", "STAFF", "BRANCH", "CN_ADMIN"}:
-            return {
+            out = {
                 "currency": currency,
                 "side": side,
                 "price": str(final_price),
                 "branch_margin": str(branch_m),
-                "max_branch_margin": str(
-                    hq_policy_service.get_max_branch_margin(pricing_tier, currency)
-                ),
                 "valid_for_seconds": self.valid_for_seconds,
                 "issued_at": issued_at,
             }
+            if use_nsdh:
+                out["tgdh"] = str(tgdh_price)
+                out["nsdh_points"] = str(pts)
+                out["use_nsdh"] = True
+            # max_branch_margin chỉ để CN biết trần khi set margin – không phải "margin HQ"
+            try:
+                out["max_cn_margin"] = str(
+                    hq_policy_service.get_max_branch_margin(pricing_tier, currency)
+                )
+            except HQPolicyError:
+                pass
+            return out
 
-        # HQ / TSC
+        # HQ / TSC: full; margin CN ẩn lúc quote (_branch_margin internal)
         return {
             "currency": currency,
             "side": side,
             "price": str(final_price),
-            "tgdh": str(tgdh_price),
+            "tgdh": str(tgdh_price) if use_nsdh else None,
+            "use_nsdh": use_nsdh,
+            "nsdh_points": str(pts) if use_nsdh else "0",
             "base_price": str(base_price),
             "hq_base_spread": str(hq_spread),
             "total_spread": str(total_spread),
-            "tgdh_points": str(tgdh_pts),
             "pricing_tier": pricing_tier,
             "valid_for_seconds": self.valid_for_seconds,
             "issued_at": issued_at,
             "_branch_margin": str(branch_m),
-            "_max_branch_margin": str(
+            "_max_cn_margin": str(
                 hq_policy_service.get_max_branch_margin(pricing_tier, currency)
             ),
         }
