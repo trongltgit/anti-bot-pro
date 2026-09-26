@@ -1,5 +1,5 @@
 """
-Transaction API – phân quyền theo role HQ / CN_ADMIN / PNV / CUSTOMER
+Transaction API – HQ / CN_ADMIN / PNV / CUSTOMER
 """
 
 import time
@@ -20,7 +20,11 @@ from app.customer.repository import (
 )
 from services.market_rate import market_rate_service, MarketRateError
 from services.pricing_engine import pricing_engine, PricingError
-from services.audit_log import add_log, count_recent_quotes, list_logs
+from services.audit_log import (
+    add_log, count_recent_quotes, list_logs,
+    check_same_param_cooldown, get_cif_quote_version, bump_cif_quote_version,
+    logs_to_csv,
+)
 from utils.rate_limit import custom_rate_limit
 from utils.security import get_client_ip
 
@@ -31,9 +35,8 @@ transaction_bp = Blueprint(
 customer_service = CustomerService()
 _TRANSACTIONS = []
 
-# KH hỏi giá quá nhiều trong cửa sổ → buộc đăng nhập lại
-KH_QUOTE_SOFT_LIMIT = 8   # trong 60s → reject + force re-login
-KH_QUOTE_HARD_LIMIT = 20  # trong 60s → coi như bot, blocked
+KH_QUOTE_SOFT_LIMIT = 8
+KH_QUOTE_HARD_LIMIT = 20
 
 
 def _current_user():
@@ -62,6 +65,8 @@ def transaction_quote():
     side = str(data.get("side", "")).upper().strip()
     amount = data.get("amount")
     branch_margin = data.get("branch_margin", 0)
+    use_nsdh = bool(data.get("use_nsdh", False))
+    nsdh_points = data.get("nsdh_points", 0)
     ip = get_client_ip()
 
     if not currency or not side or amount is None:
@@ -84,7 +89,7 @@ def transaction_quote():
             "message": "Amount phải lớn hơn 0.",
         }), 400
 
-    customer_id = session.get("customer_id")
+    customer_id = data.get("customer_id") or session.get("customer_id")
     if not customer_id:
         return jsonify({
             "error": "CUSTOMER_CONTEXT_REQUIRED",
@@ -94,43 +99,39 @@ def transaction_quote():
     user = _current_user()
     role = (session.get("role") or "CUSTOMER").upper()
 
-    # --- Anti-bot / abuse cho KH ---
     if role == "CUSTOMER":
+        # Cùng ccy + side + amount bấm liên tục → chặn 1 phút
+        remain = check_same_param_cooldown(user_id, currency, side, amount_value, 60)
+        if remain is not None:
+            add_log(
+                "quote_cooldown",
+                user_id=user_id, role=role, customer_id=customer_id, ip=ip, level="warn",
+                detail={"currency": currency, "side": side, "amount": amount_value, "remain": remain},
+            )
+            return jsonify({
+                "error": "QUOTE_COOLDOWN",
+                "message": "Hiện tại hệ thống không cập nhật giá được, xin vui lòng thử lại sau.",
+                "retry_after_seconds": remain,
+            }), 429
+
         recent = count_recent_quotes(user_id, window_seconds=60)
         add_log(
             "quote_request",
-            user_id=user_id,
-            role=role,
-            customer_id=customer_id,
-            ip=ip,
+            user_id=user_id, role=role, customer_id=customer_id, ip=ip,
             detail={"currency": currency, "side": side, "amount": amount_value, "count_60s": recent + 1},
         )
         if recent + 1 >= KH_QUOTE_HARD_LIMIT:
-            add_log(
-                "bot_blocked",
-                user_id=user_id,
-                role=role,
-                customer_id=customer_id,
-                ip=ip,
-                level="critical",
-                detail={"reason": "quote_flood"},
-            )
+            from app.customer.mock_db import block_user
+            block_user(user_id, "quote_flood_bot", blocked_by="system")
+            add_log("bot_blocked", user_id=user_id, role=role, customer_id=customer_id, ip=ip, level="critical")
             session.clear()
             return jsonify({
                 "error": "BLOCKED",
-                "message": "Phát hiện hành vi bất thường. Truy cập bị chặn.",
+                "message": "Phát hiện hành vi bot. Tài khoản bị khóa. Liên hệ TSC để mở khóa.",
                 "redirect": "/blocked",
             }), 403
         if recent + 1 >= KH_QUOTE_SOFT_LIMIT:
-            add_log(
-                "force_relogin",
-                user_id=user_id,
-                role=role,
-                customer_id=customer_id,
-                ip=ip,
-                level="warn",
-                detail={"reason": "too_many_quotes"},
-            )
+            add_log("force_relogin", user_id=user_id, role=role, customer_id=customer_id, ip=ip, level="warn")
             session.clear()
             return jsonify({
                 "error": "SESSION_EXPIRED",
@@ -140,11 +141,8 @@ def transaction_quote():
     else:
         add_log(
             "quote_request",
-            user_id=user_id,
-            role=role,
-            customer_id=customer_id,
-            branch_id=user.get("branch_id", ""),
-            ip=ip,
+            user_id=user_id, role=role, customer_id=customer_id,
+            branch_id=user.get("branch_id", ""), ip=ip,
             detail={"currency": currency, "side": side, "amount": amount_value},
         )
 
@@ -154,13 +152,18 @@ def transaction_quote():
             "message": "Bạn không có quyền giao dịch CIF này.",
         }), 403
 
+    # KH: lấy margin + nsdh từ preset CN đã set
     if role == "CUSTOMER":
         branch_margin = 0
+        use_nsdh = False
+        nsdh_points = 0
         try:
             from services.cn_margin_store import get_preset
             preset = get_preset(customer_id, currency, side, amount)
             if preset:
                 branch_margin = preset["margin"]
+                use_nsdh = bool(preset.get("use_nsdh"))
+                nsdh_points = preset.get("nsdh_points", 0)
             else:
                 return jsonify({
                     "error": "WAITING_CN_SETUP",
@@ -181,7 +184,6 @@ def transaction_quote():
     except (CustomerAPITimeout, CustomerAPIUnavailable, CustomerAPIError) as e:
         return jsonify({"error": "CUSTOMER_SERVICE_ERROR", "message": str(e)}), 503
 
-    # KH online: chỉ CIF online + đã login mới được quote
     if role == "CUSTOMER" and not customer.get("online", False):
         return jsonify({
             "error": "CIF_OFFLINE",
@@ -217,27 +219,35 @@ def transaction_quote():
             base_price=base_price,
             branch_margin=branch_margin,
             viewer_role=role,
+            use_nsdh=use_nsdh,
+            nsdh_points=nsdh_points,
         )
     except PricingError as e:
         return jsonify({"error": "PRICING_ERROR", "message": str(e)}), 400
 
     quote_id = str(uuid.uuid4())
-    # Lưu internal full (kể cả margin) để execute / HQ sau deal
+    # KH online: giá giữ 60s; CN interrupt (đổi margin/NSDH) làm hết hiệu lực
+    valid_secs = 60 if role == "CUSTOMER" else result["valid_for_seconds"]
+    cif_ver = get_cif_quote_version(customer_id)
     session["last_quote"] = {
         "quote_id": quote_id,
         "currency": result["currency"],
         "side": result["side"],
         "price": result["price"],
         "tgdh": result.get("tgdh"),
+        "use_nsdh": result.get("use_nsdh", False),
+        "nsdh_points": result.get("nsdh_points", "0"),
         "amount": amount_value,
         "branch_margin": result.get("branch_margin") or result.get("_branch_margin", "0"),
         "customer_id": customer_id,
         "issued_at": result["issued_at"],
-        "valid_for_seconds": result["valid_for_seconds"],
+        "valid_for_seconds": valid_secs,
+        "cif_version": cif_ver,
         "base_price": result.get("base_price"),
         "hq_base_spread": result.get("hq_base_spread"),
-        "tgdh_points": result.get("tgdh_points"),
     }
+    result = dict(result)
+    result["valid_for_seconds"] = valid_secs
 
     quote_payload = {
         "quote_id": quote_id,
@@ -249,20 +259,22 @@ def transaction_quote():
         "issued_at": result["issued_at"],
     }
 
-    # CN: final + margin
+    # CN: final + margin CN + tgdh (nếu chọn NSDH) + trần margin CN
     if role in {"PNV", "STAFF", "BRANCH", "CN_ADMIN"}:
-        if "branch_margin" in result:
-            quote_payload["branch_margin"] = result["branch_margin"]
-        if "max_branch_margin" in result:
-            quote_payload["max_branch_margin"] = result["max_branch_margin"]
+        quote_payload["branch_margin"] = result.get("branch_margin", "0")
+        if result.get("max_cn_margin"):
+            quote_payload["max_cn_margin"] = result["max_cn_margin"]
+        if result.get("use_nsdh"):
+            quote_payload["tgdh"] = result["tgdh"]
+            quote_payload["nsdh_points"] = result.get("nsdh_points", "0")
+            quote_payload["use_nsdh"] = True
 
-    # HQ: full TRỪ margin CN (chỉ lộ sau deal done)
+    # HQ: full trừ margin CN (chỉ sau deal)
     if role == "HQ":
-        for k in ("base_price", "hq_base_spread", "tgdh", "tgdh_points",
+        for k in ("base_price", "hq_base_spread", "tgdh", "nsdh_points", "use_nsdh",
                   "pricing_tier", "total_spread"):
-            if k in result:
+            if k in result and result[k] is not None:
                 quote_payload[k] = result[k]
-        # KHÔNG trả branch_margin lúc quote
 
     return jsonify({"status": "success", "quote": quote_payload}), 200
 
@@ -272,14 +284,8 @@ def transaction_quote():
 @pricing_security_required
 def transaction_quote_batch():
     """
-    CN staff: xem giá nhiều CIF / nhiều dòng (ccy + side) cùng lúc.
-    Body: {
-      "items": [
-        {"customer_id": "CUST001", "currency": "USD", "side": "SELL", "amount": 100000, "branch_margin": 5},
-        ...
-      ]
-    }
-    Không giới hạn số dòng cùng CIF.
+    CN: xem giá nhiều CIF / nhiều ccy / mua-bán cùng lúc (offline + online).
+    Body: { "items": [ {customer_id, currency, side, amount, branch_margin, use_nsdh, nsdh_points}, ... ] }
     """
     user_id = session.get("user_id")
     if not user_id:
@@ -293,17 +299,19 @@ def transaction_quote_batch():
     items = data.get("items") or []
     if not isinstance(items, list) or not items:
         return jsonify({"error": "INVALID", "message": "Thiếu items[]."}), 400
-    if len(items) > 50:
-        return jsonify({"error": "TOO_MANY", "message": "Tối đa 50 dòng / lần."}), 400
+    if len(items) > 100:
+        return jsonify({"error": "TOO_MANY", "message": "Tối đa 100 dòng / lần."}), 400
 
     user = _current_user()
     results = []
     for raw in items:
-        cid = str(raw.get("customer_id") or session.get("customer_id") or "").strip()
+        cid = str(raw.get("customer_id") or "").strip()
         currency = str(raw.get("currency", "")).upper().strip()
         side = str(raw.get("side", "")).upper().strip()
         amount = raw.get("amount")
         branch_margin = raw.get("branch_margin", 0)
+        use_nsdh = bool(raw.get("use_nsdh", False))
+        nsdh_points = raw.get("nsdh_points", 0)
         row = {"customer_id": cid, "currency": currency, "side": side, "amount": amount}
 
         if not cid or not currency or not side or amount is None:
@@ -333,11 +341,17 @@ def transaction_quote_batch():
                 amount=amount_value,
                 base_price=base_price,
                 branch_margin=branch_margin,
-                viewer_role=role if role != "HQ" else "PNV",  # HQ batch cũng chỉ final+margin
+                viewer_role="PNV",
+                use_nsdh=use_nsdh,
+                nsdh_points=nsdh_points,
             )
             row["price"] = result["price"]
             row["branch_margin"] = result.get("branch_margin", "0")
-            row["max_branch_margin"] = result.get("max_branch_margin")
+            row["max_cn_margin"] = result.get("max_cn_margin")
+            if result.get("use_nsdh"):
+                row["tgdh"] = result.get("tgdh")
+                row["nsdh_points"] = result.get("nsdh_points")
+                row["use_nsdh"] = True
             row["valid_for_seconds"] = result["valid_for_seconds"]
             row["issued_at"] = result["issued_at"]
         except Exception as e:
@@ -346,8 +360,7 @@ def transaction_quote_batch():
 
     add_log(
         "quote_batch",
-        user_id=user_id,
-        role=role,
+        user_id=user_id, role=role,
         branch_id=user.get("branch_id", ""),
         ip=get_client_ip(),
         detail={"count": len(items)},
@@ -376,10 +389,17 @@ def transaction_execute():
             "message": "Quote không hợp lệ hoặc đã hết hạn.",
         }), 400
 
-    if int(time.time()) - last_quote.get("issued_at", 0) > last_quote.get("valid_for_seconds", 30):
+    if int(time.time()) - last_quote.get("issued_at", 0) > last_quote.get("valid_for_seconds", 60):
         return jsonify({
             "error": "QUOTE_EXPIRED",
-            "message": "Quote đã hết hạn. Vui lòng lấy giá mới.",
+            "message": "Quote đã hết hạn (quá 1 phút). Vui lòng lấy giá mới.",
+        }), 400
+
+    # CN đổi margin/NSDH → interrupt
+    if last_quote.get("cif_version", 0) != get_cif_quote_version(last_quote.get("customer_id") or ""):
+        return jsonify({
+            "error": "QUOTE_INTERRUPTED",
+            "message": "Chi nhánh đã thay đổi margin/NSDH. Giá hết hiệu lực. Vui lòng lấy giá mới.",
         }), 400
 
     customer_id = last_quote.get("customer_id")
@@ -402,10 +422,11 @@ def transaction_execute():
         "amount": last_quote["amount"],
         "price": last_quote["price"],
         "tgdh": last_quote.get("tgdh"),
+        "use_nsdh": last_quote.get("use_nsdh", False),
+        "nsdh_points": last_quote.get("nsdh_points", "0"),
         "branch_margin": last_quote.get("branch_margin", "0"),
         "base_price": last_quote.get("base_price"),
         "hq_base_spread": last_quote.get("hq_base_spread"),
-        "tgdh_points": last_quote.get("tgdh_points"),
         "status": "COMPLETED",
         "created_at": int(time.time()),
     }
@@ -432,15 +453,16 @@ def transaction_execute():
         "status": txn["status"],
         "created_at": txn["created_at"],
     }
-    # CN: thấy margin
     if role in {"PNV", "STAFF", "BRANCH", "CN_ADMIN"}:
         txn_view["branch_margin"] = txn["branch_margin"]
-    # HQ: sau deal mới thấy margin CN + full
+        if txn.get("use_nsdh"):
+            txn_view["tgdh"] = txn.get("tgdh")
+            txn_view["nsdh_points"] = txn.get("nsdh_points")
     if role == "HQ":
         txn_view["branch_margin"] = txn["branch_margin"]
         txn_view["base_price"] = txn.get("base_price")
         txn_view["tgdh"] = txn.get("tgdh")
-        txn_view["tgdh_points"] = txn.get("tgdh_points")
+        txn_view["nsdh_points"] = txn.get("nsdh_points")
         txn_view["hq_base_spread"] = txn.get("hq_base_spread")
 
     return jsonify({"status": "success", "transaction": txn_view}), 200
@@ -479,8 +501,9 @@ def transaction_history():
         }
         if role in {"PNV", "STAFF", "BRANCH", "CN_ADMIN"}:
             row["branch_margin"] = t.get("branch_margin", "0")
+            if t.get("use_nsdh"):
+                row["tgdh"] = t.get("tgdh")
         if role == "HQ":
-            # Sau deal: HQ thấy margin CN
             row["branch_margin"] = t.get("branch_margin", "0")
             row["base_price"] = t.get("base_price")
             row["tgdh"] = t.get("tgdh")

@@ -184,6 +184,14 @@ def login():
             "message": "Thiếu username hoặc password.",
         }), 400
 
+    from app.customer.mock_db import is_user_blocked, DEMO_USERS
+    if username in DEMO_USERS and is_user_blocked(username):
+        return jsonify({
+            "error": "USER_BLOCKED",
+            "message": "Tài khoản đã bị khóa do hành vi bất thường / bot. Liên hệ TSC để mở khóa.",
+            "redirect": "/blocked",
+        }), 403
+
     user = customer_service.authenticate(username, password)
     if not user:
         return jsonify({
@@ -344,13 +352,15 @@ def branch_customers(branch_id):
 def cn_set_margin_preset():
     """CN cài margin sẵn cho CIF (KH online dùng)."""
     role = (session.get("role") or "").upper()
-    if role not in {"PNV", "STAFF", "BRANCH", "HQ"}:
+    if role not in {"PNV", "STAFF", "BRANCH", "CN_ADMIN", "HQ"}:
         return jsonify({"error": "FORBIDDEN", "message": "Chỉ chi nhánh được cài margin."}), 403
     data = request.get_json(silent=True) or {}
     customer_id = str(data.get("customer_id", "")).strip()
     currency = str(data.get("currency", "")).upper().strip()
     side = str(data.get("side", "")).upper().strip()
     margin = data.get("margin", 0)
+    nsdh_points = data.get("nsdh_points", 0)
+    use_nsdh = bool(data.get("use_nsdh", False))
     if not customer_id or not currency or not side:
         return jsonify({"error": "INVALID", "message": "Thiếu customer_id, currency hoặc side."}), 400
     user = {
@@ -361,10 +371,9 @@ def cn_set_margin_preset():
     }
     if not customer_service.check_user_access(user, customer_id):
         return jsonify({"error": "ACCESS_DENIED", "message": "Không có quyền CIF này."}), 403
-    # Margin CN không được vượt trần HQ
+    # Margin CN không được vượt trần TSC
     try:
-        from app.customer.service import CustomerService
-        from services.hq_policy import hq_policy_service, HQPolicyError
+        from services.hq_policy import hq_policy_service
         cust = customer_service.get_customer(customer_id)
         tier = str(cust.get("pricing_tier") or "BRONZE").upper()
         hq_policy_service.validate_branch_margin(tier, currency, margin)
@@ -374,9 +383,25 @@ def cn_set_margin_preset():
             "message": str(e) if str(e) else "Margin vượt trần Hội sở quy định cho chi nhánh.",
         }), 400
     from services.cn_margin_store import set_preset
-    preset = set_preset(customer_id, currency, side, margin,
-                        data.get("amount_min", 0), data.get("amount_max"))
-    return jsonify({"status": "success", "preset": preset}), 200
+    from services.audit_log import bump_cif_quote_version, add_log
+    preset = set_preset(
+        customer_id, currency, side, margin,
+        nsdh_points=nsdh_points,
+        use_nsdh=use_nsdh,
+        amount_min=data.get("amount_min", 0),
+        amount_max=data.get("amount_max"),
+    )
+    # Interrupt: làm hết hiệu lực quote cũ của CIF này
+    ver = bump_cif_quote_version(customer_id)
+    add_log(
+        "cn_preset_changed",
+        user_id=session.get("user_id") or "",
+        role=role,
+        customer_id=customer_id,
+        branch_id=session.get("branch_id") or "",
+        detail={"version": ver, "margin": margin, "use_nsdh": use_nsdh, "nsdh_points": nsdh_points},
+    )
+    return jsonify({"status": "success", "preset": preset, "cif_quote_version": ver}), 200
 
 
 @api_bp.route("/cn/margin-preset", methods=["GET"])
@@ -384,7 +409,7 @@ def cn_set_margin_preset():
 @auth_required
 def cn_list_margin_preset():
     role = (session.get("role") or "").upper()
-    if role not in {"PNV", "STAFF", "BRANCH", "HQ"}:
+    if role not in {"PNV", "STAFF", "BRANCH", "CN_ADMIN", "HQ"}:
         return jsonify({"error": "FORBIDDEN"}), 403
     from services.cn_margin_store import list_presets_for_customers
     permitted = session.get("permitted_customers") or []
@@ -648,6 +673,112 @@ def cn_staff_list():
     return jsonify({"status": "success", "staff": staff}), 200
 
 
+
+@api_bp.route("/audit-logs/export", methods=["GET"])
+@custom_rate_limit("10 per minute")
+@auth_required
+def export_audit_logs():
+    """Xuất log CSV (Excel mở được). ?format=csv|pdf"""
+    role = (session.get("role") or "").upper()
+    if role not in {"HQ", "CN_ADMIN"}:
+        return jsonify({"error": "FORBIDDEN"}), 403
+    from services.audit_log import list_logs, logs_to_csv
+    fmt = (request.args.get("format") or "csv").lower()
+    logs = list_logs(
+        role_viewer=role,
+        branch_id=session.get("branch_id") or "",
+        user_id=session.get("user_id") or "",
+        limit=2000,
+    )
+    if fmt == "pdf":
+        # PDF đơn giản dạng text
+        from flask import Response
+        lines = ["AUDIT LOG", "=" * 40]
+        for x in logs:
+            lines.append(
+                f"{x.get('ts')} | {x.get('event')} | {x.get('user_id')} | "
+                f"{x.get('customer_id')} | {x.get('ip')} | {x.get('detail')}"
+            )
+        body = "\n".join(lines)
+        return Response(
+            body,
+            mimetype="application/pdf" if False else "text/plain",
+            headers={"Content-Disposition": "attachment; filename=audit_log.txt"},
+        )
+    from flask import Response
+    csv_data = logs_to_csv(logs)
+    return Response(
+        csv_data,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=audit_log.csv"},
+    )
+
+
+@api_bp.route("/hq/users", methods=["GET"])
+@custom_rate_limit("20 per minute")
+@auth_required
+@hq_required
+def hq_list_users():
+    from app.customer.mock_db import list_demo_users
+    return jsonify({"status": "success", "users": list_demo_users()}), 200
+
+
+@api_bp.route("/hq/users", methods=["POST"])
+@custom_rate_limit("20 per minute")
+@auth_required
+@hq_required
+def hq_upsert_user():
+    data = request.get_json(silent=True) or {}
+    from app.customer.mock_db import tsc_upsert_user
+    ok, msg = tsc_upsert_user("HQ", data)
+    if not ok:
+        return jsonify({"error": "USER_ERROR", "message": msg}), 400
+    return jsonify({"status": "success", "message": msg}), 200
+
+
+@api_bp.route("/hq/blocked", methods=["GET"])
+@custom_rate_limit("20 per minute")
+@auth_required
+@hq_required
+def hq_list_blocked():
+    from app.customer.mock_db import list_blocked_users
+    return jsonify({"status": "success", "blocked": list_blocked_users()}), 200
+
+
+@api_bp.route("/hq/blocked/unlock", methods=["POST"])
+@custom_rate_limit("10 per minute")
+@auth_required
+@hq_required
+def hq_unlock_user():
+    data = request.get_json(silent=True) or {}
+    uid = str(data.get("user_id") or "").strip()
+    from app.customer.mock_db import unlock_user
+    from services.audit_log import add_log
+    ok = unlock_user(uid)
+    if not ok:
+        return jsonify({"error": "NOT_FOUND", "message": "User không bị khóa hoặc không tồn tại."}), 404
+    add_log("user_unlocked", user_id=session.get("user_id") or "", role="HQ",
+            detail={"unlocked": uid}, level="info")
+    return jsonify({"status": "success", "message": f"Đã mở khóa {uid}"}), 200
+
+
+@api_bp.route("/hq/blocked/lock", methods=["POST"])
+@custom_rate_limit("10 per minute")
+@auth_required
+@hq_required
+def hq_lock_user():
+    """TSC khóa tay user (test bot)."""
+    data = request.get_json(silent=True) or {}
+    uid = str(data.get("user_id") or "").strip()
+    reason = str(data.get("reason") or "manual_lock")
+    from app.customer.mock_db import block_user
+    from services.audit_log import add_log
+    info = block_user(uid, reason, blocked_by=session.get("user_id") or "hq")
+    add_log("user_blocked", user_id=session.get("user_id") or "", role="HQ",
+            detail=info, level="warn")
+    return jsonify({"status": "success", "blocked": info}), 200
+
+
 # ============================================================
 # Public / protected demo APIs
 # ============================================================
@@ -655,8 +786,36 @@ def cn_staff_list():
 @api_bp.route("/public-data")
 @custom_rate_limit("20 per minute")
 def public_data():
-    if is_suspicious_user_agent():
-        return jsonify({"error": "User-Agent bị nghi ngờ"}), 403
+    from services.audit_log import add_log
+    from utils.security import get_client_ip
+    ua_bad = is_suspicious_user_agent()
+    logged_in = bool(session.get("user_id"))
+    if ua_bad or not logged_in:
+        add_log(
+            "crawl_attempt",
+            user_id=session.get("user_id") or "",
+            role=session.get("role") or "ANON",
+            ip=get_client_ip(),
+            level="warn",
+            detail={
+                "path": "/api/public-data",
+                "logged_in": logged_in,
+                "suspicious_ua": ua_bad,
+                "ua": (request.headers.get("User-Agent") or "")[:120],
+            },
+        )
+    if ua_bad:
+        return jsonify({
+            "error": "CRAWL_BLOCKED",
+            "message": "Phát hiện User-Agent bot/crawler. Truy cập bị từ chối.",
+            "warning": "CRAWLING_WITHOUT_LOGIN" if not logged_in else "SUSPICIOUS_UA",
+        }), 403
+    if not logged_in:
+        return jsonify({
+            "error": "LOGIN_REQUIRED",
+            "message": "Cảnh báo: truy cập dữ liệu mà không đăng nhập (có thể là crawling).",
+            "warning": "CRAWLING_WITHOUT_LOGIN",
+        }), 401
     return jsonify({
         "status": "ok",
         "message": "Dữ liệu công khai",
