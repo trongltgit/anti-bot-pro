@@ -1,10 +1,15 @@
 """
-HQ Pricing Policy (Cấp 1 – Hội sở chính)
-========================================
+HQ Pricing Policy (Cấp 1 – Hội sở chính / TSC)
+==============================================
 
 - Chỉ role HQ được xem / sửa.
 - CN và Khách hàng KHÔNG bao giờ nhận được dữ liệu này qua API.
 - CN vẫn được xem market price (giá thị trường công khai).
+
+Thành phần:
+  * base_spread   : điểm spread HQ theo tier/currency/side
+  * max_branch_margin : trần margin CN được phép cộng
+  * tgdh_points   : điểm điều hòa (TGDH / NSDH) – cộng/trừ vào final price
 """
 
 from copy import deepcopy
@@ -16,7 +21,6 @@ class HQPolicyError(Exception):
     pass
 
 
-# Mutable demo store (production → DB nội bộ Hội sở)
 _lock = Lock()
 
 HQ_BASE_SPREAD: Dict[str, Dict[str, Dict[str, str]]] = {
@@ -61,6 +65,17 @@ HQ_MAX_BRANCH_MARGIN: Dict[str, Dict[str, str]] = {
     },
 }
 
+# TGDH / NSDH: điểm điều hòa cộng (+) hoặc trừ (-) vào final price
+# Key: currency → points (có thể âm)
+HQ_TGDH_POINTS: Dict[str, str] = {
+    "USD": "0",
+    "EUR": "0",
+    "GBP": "0",
+    "JPY": "0",
+    "AUD": "0",
+    "SGD": "0",
+}
+
 
 class HQPolicyService:
 
@@ -70,6 +85,7 @@ class HQPolicyService:
             return {
                 "base_spread": deepcopy(HQ_BASE_SPREAD),
                 "max_branch_margin": deepcopy(HQ_MAX_BRANCH_MARGIN),
+                "tgdh_points": deepcopy(HQ_TGDH_POINTS),
             }
 
     def update_base_spread(
@@ -120,6 +136,22 @@ class HQPolicyService:
         with _lock:
             HQ_MAX_BRANCH_MARGIN[tier][currency] = str(d)
 
+    def update_tgdh_points(self, currency: str, value: Any) -> None:
+        """
+        Cập nhật điểm điều hòa TGDH (NSDH).
+        value có thể dương (cộng) hoặc âm (trừ) vào final price.
+        """
+        currency = currency.upper().strip()
+        if currency not in HQ_TGDH_POINTS:
+            raise HQPolicyError(f"Currency {currency} không hỗ trợ TGDH.")
+        try:
+            d = Decimal(str(value))
+        except Exception as exc:
+            raise HQPolicyError("Giá trị tgdh_points không hợp lệ.") from exc
+
+        with _lock:
+            HQ_TGDH_POINTS[currency] = str(d)
+
     def get_base_spread(self, pricing_tier: str, currency: str, side: str) -> Decimal:
         tier = (pricing_tier or "").upper().strip()
         currency = currency.upper().strip()
@@ -146,6 +178,12 @@ class HQPolicyService:
             value = tier_cfg.get(currency)
             if value is None:
                 raise HQPolicyError(f"Không có trần margin cho {tier}/{currency}.")
+            return Decimal(str(value))
+
+    def get_tgdh_points(self, currency: str) -> Decimal:
+        currency = currency.upper().strip()
+        with _lock:
+            value = HQ_TGDH_POINTS.get(currency, "0")
             return Decimal(str(value))
 
     def validate_branch_margin(
