@@ -7,6 +7,8 @@ function friendlyErr(data, status) {
     return "Hệ thống hiện không truy cập được. Vui lòng thử lại sau.";
   if (data.error === "WAITING_CN_SETUP")
     return data.message || "Chưa có báo giá từ chi nhánh. Vui lòng liên hệ chi nhánh.";
+  if (data.error === "QUOTE_COOLDOWN")
+    return data.message || "Hiện tại hệ thống không cập nhật giá được, xin vui lòng thử lại sau.";
   if (data.error === "SESSION_EXPIRED" || data.error === "AUTHENTICATION_REQUIRED") {
     setTimeout(() => { location.href = data.redirect || "/"; }, 1500);
     return data.message || "Phiên hết hạn. Đăng nhập lại.";

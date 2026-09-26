@@ -219,3 +219,45 @@ async function loadAuditLogs() {
     l.user_id + " · " + (l.customer_id||"") + " · " + l.ip + " · " + l.ts + "</span></div>"
   ).join("") || "<p class='muted'>Chưa có log</p>";
 }
+
+async function loadBlocked() {
+  const box = document.getElementById("blocked-box");
+  if (!box) return;
+  const r = await safeJson(await fetch("/api/hq/blocked", { credentials: "same-origin" }));
+  if (!r.ok) { box.innerHTML = "<p class='error-text'>" + friendlyErr(r.data, r.status) + "</p>"; return; }
+  const items = r.data.blocked || [];
+  box.innerHTML = items.length
+    ? items.map(b => "<div class='price-line'><span>" + b.user_id + "</span><span>" +
+        (b.reason || "") + " · " + (b.blocked_at || "") + " · by " + (b.blocked_by || "") + "</span></div>").join("")
+    : "<p class='muted'>Không có user bị khóa</p>";
+}
+async function unlockUser() {
+  const uid = document.getElementById("unlock-uid").value.trim();
+  const r = await safeJson(await fetch("/api/hq/blocked/unlock", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    credentials: "same-origin", body: JSON.stringify({ user_id: uid }),
+  }));
+  document.getElementById("block-msg").textContent = r.ok ? "Đã mở khóa " + uid : friendlyErr(r.data, r.status);
+  if (r.ok) loadBlocked();
+}
+async function lockUser() {
+  const uid = document.getElementById("lock-uid").value.trim();
+  const r = await safeJson(await fetch("/api/hq/blocked/lock", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    credentials: "same-origin", body: JSON.stringify({ user_id: uid, reason: "manual_test" }),
+  }));
+  document.getElementById("block-msg").textContent = r.ok ? "Đã khóa " + uid : friendlyErr(r.data, r.status);
+  if (r.ok) loadBlocked();
+}
+async function loadUsers() {
+  const box = document.getElementById("users-box");
+  if (!box) return;
+  const r = await safeJson(await fetch("/api/hq/users", { credentials: "same-origin" }));
+  if (!r.ok) { box.innerHTML = "<p class='error-text'>" + friendlyErr(r.data, r.status) + "</p>"; return; }
+  box.innerHTML = (r.data.users || []).map(u =>
+    "<div class='price-line'><span>" + u.user_id + " · " + (u.name||"") + "</span><span>" +
+    u.role + (u.branch_id ? " · " + u.branch_id : "") +
+    (u.permitted_customers ? " · CIF " + (u.permitted_customers||[]).join(",") : "") +
+    "</span></div>"
+  ).join("") || "<p class='muted'>Chưa có user</p>";
+}
