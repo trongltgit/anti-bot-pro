@@ -113,12 +113,18 @@ def portal_hq():
 @main_bp.route("/portal/cn")
 @custom_rate_limit("30 per minute")
 def portal_cn():
-    err, st = _require_role("PNV")
-    if st == "login":
+    bind_fingerprint()
+    if not session.get("user_id"):
         return redirect("/")
-    if err:
-        return err
-    return render_template("portal_cn.html", user_name=session.get("user_name"))
+    role = (session.get("role") or "").upper()
+    if role not in {"PNV", "STAFF", "BRANCH", "CN_ADMIN"}:
+        return render_template("blocked.html", reason="Tài khoản không có quyền truy cập trang này"), 403
+    return render_template(
+        "portal_cn.html",
+        user_name=session.get("user_name"),
+        role=role,
+        is_admin=(role == "CN_ADMIN"),
+    )
 
 
 @main_bp.route("/portal/kh")
@@ -138,7 +144,7 @@ def dashboard():
     role = (session.get("role") or "").upper()
     if role == "HQ":
         return portal_hq()
-    if role == "PNV":
+    if role in {"PNV", "STAFF", "BRANCH", "CN_ADMIN"}:
         return portal_cn()
     if role == "CUSTOMER":
         return portal_kh()
@@ -579,6 +585,67 @@ def hq_set_manual_rate():
         "message": f"Đã set base {data.get('currency', '').upper()} = {rate} (mode manual).",
         "market": market_rate_service.get_all_rates(),
     }), 200
+
+
+
+@api_bp.route("/cn/assign-cif", methods=["POST"])
+@custom_rate_limit("20 per minute")
+@auth_required
+def cn_assign_cif():
+    """Admin CN gán CIF cho nhân viên."""
+    role = (session.get("role") or "").upper()
+    if role != "CN_ADMIN":
+        return jsonify({"error": "FORBIDDEN", "message": "Chỉ Admin CN được gán CIF."}), 403
+    data = request.get_json(silent=True) or {}
+    staff_id = str(data.get("staff_user_id", "")).strip()
+    cids = data.get("customer_ids") or []
+    from app.customer.mock_db import assign_cif_to_staff
+    ok, msg = assign_cif_to_staff(session.get("user_id"), staff_id, cids)
+    if not ok:
+        return jsonify({"error": "ASSIGN_ERROR", "message": msg}), 400
+    return jsonify({"status": "success", "message": msg}), 200
+
+
+@api_bp.route("/cn/set-online", methods=["POST"])
+@custom_rate_limit("20 per minute")
+@auth_required
+def cn_set_online():
+    """CN bật/tắt online cho CIF (KH online mới login + hỏi giá được)."""
+    role = (session.get("role") or "").upper()
+    if role not in {"CN_ADMIN", "PNV", "STAFF", "HQ"}:
+        return jsonify({"error": "FORBIDDEN", "message": "Không có quyền."}), 403
+    data = request.get_json(silent=True) or {}
+    cid = str(data.get("customer_id", "")).strip()
+    online = bool(data.get("online", True))
+    from app.customer.mock_db import set_customer_online
+    ok, msg = set_customer_online(
+        cid, online, role, branch_id=session.get("branch_id") or ""
+    )
+    if not ok:
+        return jsonify({"error": "ONLINE_ERROR", "message": msg}), 400
+    return jsonify({"status": "success", "message": msg, "customer_id": cid, "online": online}), 200
+
+
+@api_bp.route("/cn/staff-list", methods=["GET"])
+@custom_rate_limit("20 per minute")
+@auth_required
+def cn_staff_list():
+    role = (session.get("role") or "").upper()
+    if role != "CN_ADMIN":
+        return jsonify({"error": "FORBIDDEN", "message": "Chỉ Admin CN."}), 403
+    from app.customer.mock_db import DEMO_USERS
+    branch_id = session.get("branch_id") or ""
+    staff = [
+        {
+            "user_id": u["user_id"],
+            "name": u.get("name"),
+            "role": u.get("role"),
+            "permitted_customers": u.get("permitted_customers") or [],
+        }
+        for u in DEMO_USERS.values()
+        if u.get("branch_id") == branch_id and u.get("role") in {"PNV", "STAFF"}
+    ]
+    return jsonify({"status": "success", "staff": staff}), 200
 
 
 # ============================================================
