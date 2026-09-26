@@ -17,15 +17,13 @@ from app.customer.repository import (
     CustomerAPIUnavailable,
     CustomerAPITimeout,
 )
-from services.market_rate import MarketRateService, MarketRateError
-from services.pricing_engine import PricingEngine, PricingError
+from services.market_rate import market_rate_service, MarketRateError
+from services.pricing_engine import pricing_engine, PricingError
 from utils.rate_limit import custom_rate_limit
 
 pricing_bp = Blueprint("pricing", __name__, url_prefix="/api/pricing")
 
 customer_service = CustomerService()
-market_rate_service = MarketRateService()
-pricing_engine = PricingEngine()
 
 
 @pricing_bp.route("/quote", methods=["POST"])
@@ -109,6 +107,7 @@ def quote():
         "currency": result["currency"],
         "side": result["side"],
         "price": result["price"],
+        "tgdh": result.get("tgdh", result["price"]),
         "valid_for_seconds": result["valid_for_seconds"],
         "issued_at": result["issued_at"],
     }
@@ -118,7 +117,7 @@ def quote():
                 quote_payload[k] = result[k]
     if role == "HQ":
         for k in ("base_price", "hq_base_spread", "branch_margin",
-                  "max_branch_margin", "pricing_tier", "total_spread"):
+                  "max_branch_margin", "pricing_tier", "total_spread", "tgdh_points"):
             if k in result:
                 quote_payload[k] = result[k]
 

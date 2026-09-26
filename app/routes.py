@@ -26,6 +26,7 @@ from utils.rate_limit import custom_rate_limit
 from app.customer.service import CustomerService
 from app.middleware import auth_required
 from services.hq_policy import hq_policy_service, HQPolicyError
+from services.market_rate import market_rate_service, MarketRateError
 from functools import wraps
 
 main_bp = Blueprint("main", __name__)
@@ -496,6 +497,87 @@ def hq_update_max_margin():
         "status": "success",
         "message": "Đã cập nhật max_branch_margin.",
         "policy": hq_policy_service.get_all_policies(),
+    }), 200
+
+
+@api_bp.route("/hq/policy/tgdh-points", methods=["POST"])
+@custom_rate_limit("20 per minute")
+@auth_required
+@hq_required
+def hq_update_tgdh_points():
+    """
+    Cập nhật điểm điều hòa TGDH (NSDH).
+    Body: { "currency": "USD", "value": "5" }  (dương = cộng, âm = trừ vào final)
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        hq_policy_service.update_tgdh_points(
+            currency=data.get("currency", ""),
+            value=data.get("value"),
+        )
+    except HQPolicyError as e:
+        return jsonify({"error": "POLICY_ERROR", "message": str(e)}), 400
+    return jsonify({
+        "status": "success",
+        "message": "Đã cập nhật tgdh_points (TGDH/NSDH).",
+        "policy": hq_policy_service.get_all_policies(),
+    }), 200
+
+
+@api_bp.route("/hq/market-rate", methods=["GET"])
+@custom_rate_limit("20 per minute")
+@auth_required
+@hq_required
+def hq_get_market_rate():
+    """Xem base TSC hiện tại + mode auto/manual."""
+    return jsonify({
+        "status": "success",
+        "market": market_rate_service.get_all_rates(),
+    }), 200
+
+
+@api_bp.route("/hq/market-rate/mode", methods=["POST"])
+@custom_rate_limit("20 per minute")
+@auth_required
+@hq_required
+def hq_set_market_mode():
+    """
+    TSC set mode base price: auto (20s) hoặc manual.
+    Body: { "mode": "auto" | "manual" }
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        mode = market_rate_service.set_mode(data.get("mode", ""))
+    except MarketRateError as e:
+        return jsonify({"error": "MARKET_ERROR", "message": str(e)}), 400
+    return jsonify({
+        "status": "success",
+        "message": f"Đã chuyển mode base TSC sang '{mode}'.",
+        "market": market_rate_service.get_all_rates(),
+    }), 200
+
+
+@api_bp.route("/hq/market-rate/set", methods=["POST"])
+@custom_rate_limit("20 per minute")
+@auth_required
+@hq_required
+def hq_set_manual_rate():
+    """
+    TSC set tay base price (tự chuyển sang manual nếu đang auto).
+    Body: { "currency": "USD", "rate": "26250" }
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        rate = market_rate_service.set_manual_rate(
+            currency=data.get("currency", ""),
+            rate=data.get("rate"),
+        )
+    except MarketRateError as e:
+        return jsonify({"error": "MARKET_ERROR", "message": str(e)}), 400
+    return jsonify({
+        "status": "success",
+        "message": f"Đã set base {data.get('currency', '').upper()} = {rate} (mode manual).",
+        "market": market_rate_service.get_all_rates(),
     }), 200
 
 

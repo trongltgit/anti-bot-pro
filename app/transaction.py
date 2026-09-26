@@ -18,8 +18,8 @@ from app.customer.repository import (
     CustomerAPIUnavailable,
     CustomerAPITimeout,
 )
-from services.market_rate import MarketRateService, MarketRateError
-from services.pricing_engine import PricingEngine, PricingError
+from services.market_rate import market_rate_service, MarketRateError
+from services.pricing_engine import pricing_engine, PricingError
 from utils.rate_limit import custom_rate_limit
 
 transaction_bp = Blueprint(
@@ -27,8 +27,6 @@ transaction_bp = Blueprint(
 )
 
 customer_service = CustomerService()
-market_rate_service = MarketRateService()
-pricing_engine = PricingEngine()
 _TRANSACTIONS = []
 
 
@@ -171,6 +169,7 @@ def transaction_quote():
         "currency": result["currency"],
         "side": result["side"],
         "price": result["price"],
+        "tgdh": result.get("tgdh", result["price"]),
         "amount": amount_value,
         "valid_for_seconds": result["valid_for_seconds"],
         "issued_at": result["issued_at"],
@@ -183,10 +182,10 @@ def transaction_quote():
         if "max_branch_margin" in result:
             quote_payload["max_branch_margin"] = result["max_branch_margin"]
 
-    # HQ: thấy base_price + spread
+    # HQ: thấy base_price + spread + TGDH points
     if role == "HQ":
         for k in ("base_price", "hq_base_spread", "branch_margin",
-                  "max_branch_margin", "pricing_tier", "total_spread"):
+                  "max_branch_margin", "pricing_tier", "total_spread", "tgdh_points"):
             if k in result:
                 quote_payload[k] = result[k]
 
