@@ -9,7 +9,10 @@
 <body>
   <div class="container">
     <header class="bar">
-      <div><h1>Chi nhánh</h1><p class="muted">Xin chào, {{ user_name }}</p></div>
+      <div>
+        <h1>Chi nhánh {% if is_admin %}(Admin){% endif %}</h1>
+        <p class="muted">Xin chào, {{ user_name }} · CN chỉ thấy <strong>final price + margin</strong></p>
+      </div>
       <button class="secondary" onclick="logout()">Đăng xuất</button>
     </header>
 
@@ -17,14 +20,17 @@
       <h2>1. Chi nhánh &amp; CIF</h2>
       <label class="muted">Chi nhánh</label>
       <select id="branch-select" class="full-select"></select>
-      <label class="muted" style="margin-top:0.5rem;display:block">CIF (online = có login; offline = chỉ giao dịch qua CN)</label>
+      <label class="muted" style="margin-top:0.5rem;display:block">CIF (online = KH login + hỏi giá được)</label>
       <select id="cif-select" class="full-select"></select>
+      <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.5rem">
+        <input type="checkbox" id="set-online" onchange="toggleOnline()"> Bật online cho CIF đang chọn
+      </label>
       <p id="cif-msg" class="muted"></p>
     </section>
 
     <section class="card">
       <h2>2. Margin KH online</h2>
-      <p class="hint">Chỉ CIF <strong>online</strong>. Margin ≤ trần HQ (không vượt). Chiều = chiều <strong>ngân hàng</strong> (SELL = NH bán, BUY = NH mua).</p>
+      <p class="hint">Chiều = ngân hàng. SELL = NH bán (KH mua) · BUY = NH mua (KH bán).</p>
       <label class="muted">CIF online</label>
       <select id="preset-cif" class="full-select"></select>
       <div class="form-row" style="margin-top:0.5rem">
@@ -42,8 +48,7 @@
     </section>
 
     <section class="card">
-      <h2>3. Báo giá offline (mọi CIF)</h2>
-      <p class="hint">Chọn CIF ở mục 1 (online hoặc offline). Online vẫn quote offline được; offline chỉ qua CN.</p>
+      <h2>3. Báo giá 1 CIF (offline/online)</h2>
       <div class="form-row">
         <select id="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
         <select id="side">
@@ -51,17 +56,42 @@
           <option value="BUY">BUY – NH mua (KH bán)</option>
         </select>
         <input type="number" id="amount" value="100000" min="1">
-        <input type="number" id="margin" value="5" min="0" step="0.1" placeholder="Margin ≤ trần HQ">
+        <input type="number" id="margin" value="5" min="0" step="0.1" placeholder="Margin">
         <button onclick="startQuote()">Theo dõi giá (30s)</button>
         <button class="secondary" onclick="stopQuote()">Dừng</button>
       </div>
       <div id="quote-box" class="result-box">
-        <div class="price-line highlight"><span>Giá khách hàng</span><strong id="final-px">—</strong></div>
+        <div class="price-line highlight"><span>Final price</span><strong id="final-px">—</strong></div>
         <p class="muted small" id="quote-meta"></p>
       </div>
       <button onclick="executeTrade()" id="btn-exec" disabled style="margin-top:0.75rem">Đồng ý &amp; giao dịch</button>
       <div id="trade-box" class="result-box"></div>
     </section>
+
+    <section class="card">
+      <h2>4. Multi CIF / nhiều dòng cùng lúc</h2>
+      <p class="hint">Xem giá nhiều CIF, nhiều ccy, mua/bán — không giới hạn số dòng cùng một CIF.</p>
+      <button onclick="addBatchRow()">Thêm dòng</button>
+      <button onclick="runBatchQuote()">Lấy giá tất cả</button>
+      <div id="batch-list" class="result-box" style="margin-top:0.5rem"></div>
+      <div id="batch-result" class="result-box"></div>
+    </section>
+
+    {% if is_admin %}
+    <section class="card">
+      <h2>5. Admin CN – Gán CIF cho nhân viên</h2>
+      <div class="form-row">
+        <input id="assign-staff" placeholder="staff01" value="staff01">
+        <input id="assign-cifs" placeholder="CUST001,CUST003" value="CUST001">
+        <button onclick="assignCif()">Gán CIF</button>
+      </div>
+      <p id="assign-msg" class="muted"></p>
+      <button class="secondary" onclick="loadStaff()">Danh sách nhân viên</button>
+      <div id="staff-box" class="result-box"></div>
+      <button class="secondary" onclick="loadCnLogs()" style="margin-top:0.5rem">Log chi nhánh</button>
+      <div id="cn-log-box" class="result-box"></div>
+    </section>
+    {% endif %}
 
     <section class="card">
       <h2>Lịch sử</h2>
@@ -70,5 +100,9 @@
     </section>
   </div>
   <script src="/static/js/portal_cn.js"></script>
+  <script>
+    loadBranches();
+    renderBatch();
+  </script>
 </body>
 </html>

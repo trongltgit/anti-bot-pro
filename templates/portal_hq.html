@@ -91,9 +91,16 @@
     </section>
 
     <section class="card">
-      <h2>Lịch sử giao dịch</h2>
+      <h2>Lịch sử giao dịch (sau deal mới thấy margin CN)</h2>
       <button onclick="loadHistory()">Tải lịch sử</button>
       <div id="history-box" class="result-box"></div>
+    </section>
+
+    <section class="card">
+      <h2>Audit log toàn hệ thống (TSC)</h2>
+      <p class="hint">Mọi hành vi KH / bot / CN — lưu tại TSC.</p>
+      <button onclick="loadAuditLogs()">Tải log</button>
+      <div id="audit-box" class="result-box"></div>
     </section>
   </div>
   <script src="/static/js/portal_hq.js"></script>
