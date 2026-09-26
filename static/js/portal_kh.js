@@ -40,7 +40,10 @@ async function signed(method, path, bodyObj) {
 }
 async function getQuote() {
   clearPrice("Đang lấy giá...");
-  // UI: chiều KH; API: chiều NH (đảo)
+  // UI: chiều KH  |  API: chiều NH (đảo ngược)
+  // KH Mua → API SELL (NH bán cho KH) → giá cao hơn
+  // KH Bán → API BUY  (NH mua từ KH) → giá thấp hơn
+  // → đảm bảo cùng thời điểm: giá KH bán < giá KH mua
   const khSide = document.getElementById("side").value;
   const bankSide = khSide === "BUY" ? "SELL" : "BUY";
   const bodyObj = {
@@ -70,9 +73,12 @@ async function getQuote() {
     document.getElementById("msg").textContent = "";
     document.getElementById("price-card").style.display = "block";
     document.getElementById("final-price").textContent = q.price;
-    document.getElementById("price-meta").textContent =
-      q.currency + " · Bạn " + (khSide === "BUY" ? "mua" : "bán") +
+    let meta = q.currency + " · Bạn " + (khSide === "BUY" ? "mua" : "bán") +
       " · Hiệu lực " + q.valid_for_seconds + " giây";
+    if (q.tgdh && q.tgdh !== q.price) {
+      meta += " · TGDH " + q.tgdh;
+    }
+    document.getElementById("price-meta").textContent = meta;
   } catch (e) {
     clearPrice(e.message || "Hệ thống hiện không truy cập được. Vui lòng thử lại sau.");
   }

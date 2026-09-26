@@ -186,10 +186,13 @@ async function fetchQuoteOnce() {
     lastQuoteId = q.quote_id;
     quoteExpireAt = (q.issued_at || Math.floor(Date.now() / 1000)) + (q.valid_for_seconds || 30);
     document.getElementById("final-px").textContent = q.price;
+    const sideLabel = q.side === "BUY" ? "NH mua (KH bán)" : "NH bán (KH mua)";
     document.getElementById("quote-meta").textContent =
-      "CIF " + cid + " · Margin " + (q.branch_margin || "0") +
+      "CIF " + cid + " · " + sideLabel +
+      " · Margin " + (q.branch_margin || "0") +
       (q.max_branch_margin ? " (trần HQ " + q.max_branch_margin + ")" : "") +
-      " · Hiệu lực " + q.valid_for_seconds + "s";
+      (q.tgdh ? " · TGDH " + q.tgdh : "") +
+      " · Hiệu lực " + q.valid_for_seconds + "s (auto 30s)";
     document.getElementById("btn-exec").disabled = false;
   } catch (e) {
     clearQuoteUI(e.message || "Hệ thống hiện không truy cập được. Vui lòng thử lại sau.");
@@ -198,7 +201,8 @@ async function fetchQuoteOnce() {
 function startQuote() {
   stopQuote();
   fetchQuoteOnce();
-  quoteTimer = setInterval(fetchQuoteOnce, 5000);
+  // CN/KH: tự động cập nhật giá mới sau mỗi 30 giây
+  quoteTimer = setInterval(fetchQuoteOnce, 30000);
 }
 function stopQuote() {
   if (quoteTimer) clearInterval(quoteTimer);
