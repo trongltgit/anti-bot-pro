@@ -3,29 +3,54 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hội sở</title>
+  <title>Hội sở (TSC)</title>
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
   <div class="container">
     <header class="bar">
-      <div><h1>Hội sở</h1><p class="muted">Xin chào, {{ user_name }}</p></div>
+      <div><h1>Hội sở (TSC)</h1><p class="muted">Xin chào, {{ user_name }}</p></div>
       <button class="secondary" onclick="logout()">Đăng xuất</button>
     </header>
 
+    <!-- Base TSC: auto 20s / manual -->
+    <section class="card">
+      <h2>Base TSC – Tỷ giá gốc</h2>
+      <p class="hint">Production: TSC chọn <strong>auto</strong> (dao động mỗi 20s) hoặc <strong>manual</strong> (set tay).</p>
+      <div class="form-row">
+        <select id="m-mode">
+          <option value="auto">Auto (20 giây)</option>
+          <option value="manual">Manual</option>
+        </select>
+        <button onclick="setMarketMode()">Đổi mode</button>
+        <button class="secondary" onclick="loadMarket()">Tải base hiện tại</button>
+      </div>
+      <div class="form-row" style="margin-top:0.5rem">
+        <select id="m-ccy"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
+        <input type="number" id="m-rate" value="26200" step="0.1" placeholder="Base rate">
+        <button onclick="setManualRate()">Set manual rate</button>
+      </div>
+      <p id="market-msg" class="muted"></p>
+      <div id="market-box" class="result-box"></div>
+    </section>
+
+    <!-- Chính sách cấp 1 -->
     <section class="card">
       <h2>Chính sách giá cấp 1</h2>
       <button onclick="loadPolicy()">Tải chính sách</button>
       <div id="policy-view" class="table-wrap"></div>
       <p id="policy-msg" class="muted"></p>
-      <h3>Sửa base_spread</h3>
+
+      <h3>Sửa base_spread (điểm spread HQ)</h3>
+      <p class="hint">BUY = NH mua (KH bán) · SELL = NH bán (KH mua)</p>
       <div class="form-row">
         <select id="tier"><option>GOLD</option><option>SILVER</option><option>BRONZE</option></select>
         <select id="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
-        <select id="side"><option>SELL</option><option>BUY</option></select>
+        <select id="side"><option value="SELL">SELL (NH bán)</option><option value="BUY">BUY (NH mua)</option></select>
         <input type="number" id="spread" value="15" step="0.1">
         <button onclick="updateSpread()">Lưu</button>
       </div>
+
       <h3>Trần margin chi nhánh</h3>
       <div class="form-row">
         <select id="tier2"><option>GOLD</option><option>SILVER</option><option>BRONZE</option></select>
@@ -33,18 +58,31 @@
         <input type="number" id="maxm" value="20" step="0.1">
         <button onclick="updateMax()">Lưu</button>
       </div>
+
+      <h3>TGDH / NSDH – Điểm điều hòa</h3>
+      <p class="hint">Cộng (+) hoặc trừ (−) số điểm vào <strong>final price</strong> → ra TGDH.</p>
+      <div class="form-row">
+        <select id="tgdh-ccy"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
+        <input type="number" id="tgdh-pts" value="0" step="0.1" placeholder="Điểm (+/−)">
+        <button onclick="updateTgdh()">Lưu TGDH</button>
+      </div>
       <p id="update-msg" class="muted"></p>
     </section>
 
+    <!-- Quote -->
     <section class="card">
-      <h2>Chọn CIF & kiểm tra giá (HQ thấy base price)</h2>
+      <h2>Chọn CIF &amp; kiểm tra giá (HQ thấy base + TGDH)</h2>
+      <p class="hint">Chiều bán = NH bán · Chiều mua = NH mua. Cùng CIF: NH mua &lt; NH bán (KH bán &lt; KH mua).</p>
       <div class="form-row">
         <select id="cif-select"></select>
         <button onclick="loadCifs()">Tải CIF</button>
       </div>
       <div class="form-row">
         <select id="q-cur"><option>USD</option><option>EUR</option></select>
-        <select id="q-side"><option>SELL</option><option>BUY</option></select>
+        <select id="q-side">
+          <option value="SELL">SELL – NH bán (KH mua)</option>
+          <option value="BUY">BUY – NH mua (KH bán)</option>
+        </select>
         <input type="number" id="q-amt" value="100000">
         <input type="number" id="q-margin" value="0" step="0.1" title="margin CN giả lập">
         <button onclick="quote()">Lấy giá</button>
@@ -59,5 +97,6 @@
     </section>
   </div>
   <script src="/static/js/portal_hq.js"></script>
+  <script>loadMarket(); loadPolicy();</script>
 </body>
 </html>

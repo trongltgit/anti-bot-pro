@@ -24,12 +24,15 @@
 
     <section class="card">
       <h2>2. Margin KH online</h2>
-      <p class="hint">Chỉ CIF <strong>online</strong>. Margin ≤ trần HQ (không vượt). Chiều SELL/BUY = chiều ngân hàng.</p>
+      <p class="hint">Chỉ CIF <strong>online</strong>. Margin ≤ trần HQ (không vượt). Chiều = chiều <strong>ngân hàng</strong> (SELL = NH bán, BUY = NH mua).</p>
       <label class="muted">CIF online</label>
       <select id="preset-cif" class="full-select"></select>
       <div class="form-row" style="margin-top:0.5rem">
         <select id="p-cur"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
-        <select id="p-side"><option>SELL</option><option>BUY</option></select>
+        <select id="p-side">
+          <option value="SELL">SELL – NH bán (KH mua)</option>
+          <option value="BUY">BUY – NH mua (KH bán)</option>
+        </select>
         <input type="number" id="p-margin" value="5" min="0" step="0.1" placeholder="Margin ≤ trần HQ">
         <button onclick="savePreset()">Lưu / Cập nhật</button>
       </div>
@@ -43,10 +46,13 @@
       <p class="hint">Chọn CIF ở mục 1 (online hoặc offline). Online vẫn quote offline được; offline chỉ qua CN.</p>
       <div class="form-row">
         <select id="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>SGD</option></select>
-        <select id="side"><option>SELL</option><option>BUY</option></select>
+        <select id="side">
+          <option value="SELL">SELL – NH bán (KH mua)</option>
+          <option value="BUY">BUY – NH mua (KH bán)</option>
+        </select>
         <input type="number" id="amount" value="100000" min="1">
         <input type="number" id="margin" value="5" min="0" step="0.1" placeholder="Margin ≤ trần HQ">
-        <button onclick="startQuote()">Theo dõi giá</button>
+        <button onclick="startQuote()">Theo dõi giá (30s)</button>
         <button class="secondary" onclick="stopQuote()">Dừng</button>
       </div>
       <div id="quote-box" class="result-box">
