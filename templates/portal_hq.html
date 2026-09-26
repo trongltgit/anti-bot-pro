@@ -98,9 +98,31 @@
 
     <section class="card">
       <h2>Audit log toàn hệ thống (TSC)</h2>
-      <p class="hint">Mọi hành vi KH / bot / CN — lưu tại TSC.</p>
+      <p class="hint">Giao dịch + hỏi giá + crawl/bot. Xuất Excel (CSV) hoặc text.</p>
       <button onclick="loadAuditLogs()">Tải log</button>
+      <a class="secondary" href="/api/audit-logs/export?format=csv" style="margin-left:0.5rem">Xuất Excel (CSV)</a>
+      <a class="secondary" href="/api/audit-logs/export?format=pdf" style="margin-left:0.5rem">Xuất PDF/Text</a>
       <div id="audit-box" class="result-box"></div>
+    </section>
+
+    <section class="card">
+      <h2>User bị khóa (Blocked)</h2>
+      <p class="hint">Bot flood / khóa tay. Mở khóa sau khi xác minh.</p>
+      <button onclick="loadBlocked()">Tải danh sách blocked</button>
+      <div id="blocked-box" class="result-box"></div>
+      <div class="form-row" style="margin-top:0.5rem">
+        <input id="unlock-uid" placeholder="user_id cần mở khóa">
+        <button onclick="unlockUser()">Mở khóa</button>
+        <input id="lock-uid" placeholder="user_id khóa tay">
+        <button class="secondary" onclick="lockUser()">Khóa tay (test)</button>
+      </div>
+      <p id="block-msg" class="muted"></p>
+    </section>
+
+    <section class="card">
+      <h2>Quản lý user (TSC)</h2>
+      <button onclick="loadUsers()">Tải danh sách user</button>
+      <div id="users-box" class="result-box"></div>
     </section>
   </div>
   <script src="/static/js/portal_hq.js"></script>
