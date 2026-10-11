@@ -27,7 +27,7 @@
     <p class="center"><a href="/">← Chọn cổng khác</a></p>
   </div>
   <script>
-    const EXPECTED_ROLE = "{{ expected_role }}";
+    const EXPECTED_ROLES = "{{ expected_role }}".split(",");
     const REDIRECT = "{{ redirect_url }}";
 
     async function doLogin() {
@@ -49,7 +49,7 @@
           return;
         }
         const role = (data.user && data.user.role) || "";
-        if (EXPECTED_ROLE && role !== EXPECTED_ROLE) {
+        if (EXPECTED_ROLES[0] && !EXPECTED_ROLES.includes(role)) {
           err.textContent = "Tài khoản không thuộc cổng này. Vui lòng chọn đúng cổng.";
           await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
           return;
