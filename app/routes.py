@@ -69,7 +69,7 @@ def login_cn():
         "login.html",
         portal_title="Chi nhánh",
         portal_desc="Báo giá và giao dịch khách hàng",
-        expected_role="PNV",
+        expected_role="PNV,CN_ADMIN",
         redirect_url="/portal/cn",
         default_user="staff01",
     )
